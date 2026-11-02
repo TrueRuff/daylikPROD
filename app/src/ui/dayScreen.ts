@@ -268,9 +268,9 @@ export function initDayScreen(root: HTMLElement): void {
               `<button class="energy${e === energy ? ' on' : ''}" data-energy="${e}"
                 aria-pressed="${e === energy}">${t(`energy.${e}`)}</button>`).join('')}
           </div>
-          <button id="what-now" class="what-now-btn">${t('day.whatNow')}</button>
         </div>
         <button id="auto-place" class="secondary">${t('day.autoPlace')}</button>
+        <button id="what-now" class="what-now-btn">${t('day.whatNow')}</button>
         <p class="energy-hint muted">${t(`energy.hint.${energy}`)}</p>
       </div>
       ${whatNow === 'empty' ? `<div class="card"><p class="muted">${t('day.whatNowEmpty')}</p></div>` : whatNow ? whatNowHtml(whatNow) : ''}
@@ -416,7 +416,7 @@ export function initDayScreen(root: HTMLElement): void {
         <span class="focus-label">${t('day.whatNow')}</span>
         <div class="focus-task">
           ${dot}<strong>${escapeHtml(rec.task.title)}</strong>
-          <span class="muted">${t('day.whatNowHint', { b: minutesToTime(rec.end), dur: rec.task.durationMin })}</span>
+          <span class="muted">${t('day.whatNowHint', { b: minutesToTime(rec.end), dur: rec.task.durationMin, title: rec.task.title })}</span>
         </div>
         <div class="row">
           <button id="whatnow-place" data-id="${rec.task.id}" data-start="${rec.start}">${t('day.whatNowPlace')} ${minutesToTime(rec.start)}</button>
