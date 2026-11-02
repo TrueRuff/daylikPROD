@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f4f4f6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#131417" media="(prefers-color-scheme: dark)" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" type="image/png" href="icon-192.png" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
+    <title>Дейлик — планировщик</title>
+    <script>
+      // тема до первой отрисовки: сохранённый выбор или системная
+      try {
+        const t = localStorage.getItem('daylik-theme');
+        if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t;
+        else if (matchMedia('(prefers-color-scheme: dark)').matches) {
+          document.documentElement.dataset.theme = 'dark';
+        }
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <div id="app" class="app" hidden>
+      <aside class="sidebar">
+        <div class="brand">
+          <img class="logo" src="icon-192.png" alt="">
+          <span class="brand-name" data-i18n="app.name">Дейлик</span>
+        </div>
+        <nav>
+          <button data-tab="day">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>
+            <span data-i18n="nav.day">День</span>
+          </button>
+          <button data-tab="calendar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5.5" width="16" height="14.5" rx="2.5"/><path d="M4 10.5h16M8.5 3.5v4M15.5 3.5v4"/></svg>
+            <span data-i18n="nav.calendar">Календарь</span>
+          </button>
+          <button data-tab="spheres">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M15.2 8.8l-1.8 4.6-4.6 1.8 1.8-4.6z"/></svg>
+            <span data-i18n="nav.spheres">Направления</span>
+          </button>
+          <button data-tab="log" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 6h.01M5 12h.01M5 18h.01M9.5 6H19M9.5 12H19M9.5 18H19"/></svg>
+            <span data-i18n="nav.log">Журнал</span>
+          </button>
+        </nav>
+        <div class="side-foot">
+          <div class="side-user">
+            <span id="who-avatar" class="avatar" hidden></span>
+            <span id="who" class="muted" hidden></span>
+            <button id="logout" class="secondary" data-i18n="auth.logout" hidden>Выйти</button>
+          </div>
+          <div class="side-tools">
+            <button id="add" class="icon-btn add-btn" data-i18n-title="input.title" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5.5v13M5.5 12h13"/></svg>
+            </button>
+            <button id="help" class="icon-btn" data-i18n-title="onb.title" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 9.5a3 3 0 1 1 4.2 2.8c-.9.4-1.2 1-1.2 2v.7"/><path d="M12 18h.01"/></svg>
+            </button>
+            <button id="lang" class="icon-btn" hidden>EN</button>
+            <button id="theme" class="icon-btn" data-i18n-title="theme.toggle" hidden>☾</button>
+            <button id="bell" class="icon-btn" data-i18n-title="bell.enable" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 9a6 6 0 1 0-12 0c0 5-2 6-2 6h16s-2-1-2-6"/><path d="M10 19a2.2 2.2 0 0 0 4 0"/></svg>
+            </button>
+          </div>
+        </div>
+      </aside>
+      <main>
+        <section id="tab-day" hidden></section>
+        <section id="tab-calendar" hidden></section>
+        <section id="tab-spheres" hidden></section>
+        <section id="tab-log" hidden></section>
+      </main>
+    </div>
+    <section id="auth" class="auth-wrap"></section>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

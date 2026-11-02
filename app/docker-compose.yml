@@ -1,0 +1,10 @@
+services:
+  daylik:
+    build:
+      context: .
+      args:
+        # ключ LLM берётся из окружения при сборке; пустой — режим только правил
+        VITE_OPENROUTER_API_KEY: ${VITE_OPENROUTER_API_KEY:-}
+        VITE_LLM_MODEL: ${VITE_LLM_MODEL:-openrouter/free}
+    ports:
+      - "8080:80"
