@@ -19,7 +19,7 @@ function buildSections(): OnbSection[] {
     {
       img: 'onboarding/day.png',
       title: t('onb.day.title'),
-      markers: [[9, 15], [57, 13], [48, 31], [48, 41], [80, 35], [91, 9], [28, 19], [87, 19]],
+      markers: [[9, 11], [57, 15], [48, 46], [48, 56], [80, 51], [60, 32], [54, 24], [87, 44]],
       items: [
         t('onb.day.1'), t('onb.day.2'), t('onb.day.3'), t('onb.day.4'),
         t('onb.day.5'), t('onb.day.6'), t('onb.day.7'), t('onb.day.8'),
@@ -28,7 +28,7 @@ function buildSections(): OnbSection[] {
     {
       img: 'onboarding/add.png',
       title: t('onb.add.title'),
-      markers: [[65, 25], [39, 35], [50, 53], [43, 59], [37, 76], [50, 81]],
+      markers: [[45, 25], [38, 35], [49, 53], [35, 63], [49, 75], [49, 86]],
       items: [
         t('onb.add.1'), t('onb.add.2'), t('onb.add.3'), t('onb.add.4'),
         t('onb.add.5'), t('onb.add.6'),
@@ -37,7 +37,7 @@ function buildSections(): OnbSection[] {
     {
       img: 'onboarding/areas.png',
       title: t('onb.areas.title'),
-      markers: [[59, 15], [59, 24], [35, 25], [29, 34], [26, 56], [28, 66]],
+      markers: [[35, 19], [35, 25], [60, 25], [29, 34], [26, 56], [28, 66]],
       items: [
         t('onb.areas.1'), t('onb.areas.2'), t('onb.areas.3'), t('onb.areas.4'),
         t('onb.areas.5'), t('onb.areas.6'),
@@ -46,7 +46,7 @@ function buildSections(): OnbSection[] {
     {
       img: 'onboarding/calendar.png',
       title: t('onb.cal.title'),
-      markers: [[66, 8], [23, 21], [48, 75]],
+      markers: [[25, 9], [26, 23], [39, 31]],
       items: [t('onb.cal.1'), t('onb.cal.2'), t('onb.cal.3')],
     },
   ];
