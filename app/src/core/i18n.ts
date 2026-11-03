@@ -104,7 +104,7 @@ export const DICTS: Record<Lang, Record<string, DictValue>> = {
     'onb.add.1': 'Разобрать текст',
     'onb.add.2': 'Тип: разовое или продолжительное',
     'onb.add.3': 'Название можно поправить',
-    'onb.add.4': 'Группа Н/Ж/П — придёт сама, если выбрать направление',
+    'onb.add.4': 'Направление подскажется само — подтверди одним тапом',
     'onb.add.5': 'Длительность в один клик',
     'onb.add.6': 'Напоминание, повтор и направление — здесь',
 
@@ -342,7 +342,7 @@ export const DICTS: Record<Lang, Record<string, DictValue>> = {
     'onb.add.1': 'Parse the text',
     'onb.add.2': 'Type: one-off or ongoing',
     'onb.add.3': 'The title is editable',
-    'onb.add.4': 'N/D/U group — comes automatically when you pick an area',
+    'onb.add.4': 'The area is suggested — confirm with one tap',
     'onb.add.5': 'Duration in one tap',
     'onb.add.6': 'Reminder, repeat and area live here',
 
