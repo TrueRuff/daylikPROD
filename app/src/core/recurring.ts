@@ -1,7 +1,7 @@
 // повторяющиеся дела: расчёт следующего вхождения по repeatRule.
 // repeatRule: null | 'daily' | 'weekly' | 'every:N' (каждые N дней).
 
-import { addDays } from './schedule.js';
+import { addDays, todayStr } from './schedule.js';
 import type { Task } from './models.js';
 
 const EVERY_RE = /^every:(\d+)$/;
@@ -25,22 +25,15 @@ export interface OccurrencePatch {
   scheduledStart: number | null;
 }
 
-/**
- * следующее вхождение дела после завершения.
- * возвращает патч для новой задачи-вхождения или null, если дело не повторяется.
- */
+// следующее вхождение после завершения: патч для новой задачи
+// или null, если дело не повторяется
 export function nextOccurrence(task: Task): OccurrencePatch | null {
   if (!task.repeatRule || !isRepeatRule(task.repeatRule)) return null;
   const base = task.scheduledDate || null;
-  const date = nextDate(task.repeatRule, base || todayLocal());
+  const date = nextDate(task.repeatRule, base || todayStr());
   if (!date) return null;
   return {
     scheduledDate: task.scheduledDate != null ? date : null, // встречу в расписании переносим, свободную оставляем свободной
     scheduledStart: task.scheduledStart,
   };
-}
-
-function todayLocal(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }

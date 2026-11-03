@@ -60,6 +60,7 @@ export interface TaskProps {
   createdAt?: number;
   source?: TaskSource;
   owner?: string | null;
+  doneAt?: number | null; // время завершения; для недельной сводки направлений
 }
 
 export class Task {
@@ -79,11 +80,12 @@ export class Task {
   createdAt: number;
   source: TaskSource;
   owner: string | null;
+  doneAt: number | null;
 
   constructor({
     id, sphereId = null, rawText = '', title, group, durationMin = 30, status = 'todo',
     scheduledDate = null, scheduledStart = null, dueAt = null, repeatRule = null, notes = '',
-    demo = false, createdAt = Date.now(), source = 'manual', owner = null,
+    demo = false, createdAt = Date.now(), source = 'manual', owner = null, doneAt = null,
   }: TaskProps) {
     this.id = id;
     this.sphereId = sphereId;
@@ -101,6 +103,7 @@ export class Task {
     this.createdAt = createdAt;
     this.source = source;
     this.owner = owner;
+    this.doneAt = doneAt;
   }
 }
 

@@ -112,7 +112,7 @@ function readToken(): string | null {
   }
 }
 
-export function dropToken(): void {
+function dropToken(): void {
   try {
     localStorage.removeItem(TOKEN_KEY);
   } catch {

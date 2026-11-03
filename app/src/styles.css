@@ -297,20 +297,23 @@ select { width: auto; min-width: 150px; }
 .grp.on[data-g='Ж'] { background: var(--g-want); border-color: var(--g-want); color: #fff; }
 .grp.on[data-g='П'] { background: var(--g-use); border-color: var(--g-use); color: #fff; }
 /* уровень сил: сегмент-контрол в общем стиле — мягкие скругления, как у кнопок */
+/* «Силы» и «Что сейчас?» — по центру одна колонка; разложить — у колонки дел */
 .day-tools {
   display: grid;
-  grid-template-columns: 1fr auto;
   grid-template-areas:
-    'energy auto'
-    'whatnow whatnow'
-    'hint hint';
-  align-items: end;
+    'energy'
+    'whatnow'
+    'hint';
+  justify-items: center;
   gap: 10px;
   margin: 14px 0 10px;
 }
+/* шапка колонки дел: заголовок слева, автоукладка справа — кнопка относится
+   к делам и стоит на уровне верхней кромки таймлайна */
+.side-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.side-head h3 { margin: 0; }
 /* подпись «Силы» — отдельной строкой над контролом, не часть выбора */
 .energy-block { grid-area: energy; display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.day-tools > .secondary { grid-area: auto; }
 .energy-pick {
   display: inline-flex;
   align-items: center;
@@ -388,7 +391,6 @@ select { width: auto; min-width: 150px; }
   margin-bottom: 14px;
 }
 .day-head h2 { margin: 0; }
-.day-head #what-now { flex: none; }
 .day-date { margin: 2px 0 0; color: var(--ink-soft); font-size: 13.5px; }
 
 /* день: собственный таймлайн */
@@ -1194,9 +1196,44 @@ select { width: auto; min-width: 150px; }
 .tl-card.tl-current { outline: 2px solid var(--now); outline-offset: 2px; }
 .tl-row:has(.tl-current) .tl-t { color: var(--now); font-weight: 650; }
 
-/* «Что сейчас?» стоит под «Силами» — карточка-рекомендация раскрывается
-   сразу под кнопкой, а не где-то посреди страницы */
-.what-now-btn { grid-area: whatnow; width: 100%; min-height: 44px; border-radius: 12px; margin-top: 2px; }
+/* «Что сейчас?» — под «Силами», по центру, своей ширины; карточка
+   рекомендации раскрывается сразу под ней */
+.what-now-btn { grid-area: whatnow; justify-self: center; min-height: 44px; border-radius: 12px; margin-top: 2px; }
 
 /* кайма цвета направления единообразно: колонка дел, пикер, «сделанные» */
 .pick-task, .done-item { border-left: 4px solid var(--task-c, var(--line)); }
+
+/* режим «мало сил»: спрятанные за details дела — без давления */
+.col-more { margin-top: 4px; }
+.col-more summary { cursor: pointer; color: var(--ink-soft); font-size: 12.5px; padding: 6px 0; min-height: 44px; display: flex; align-items: center; }
+
+/* таймер работы: отсчёт табличными цифрами, не прыгает */
+.timer-card #timer-left { font-variant-numeric: tabular-nums; font-size: 14px; }
+
+/* пустая колонка = приглашение с примерами, а не «дел нет» */
+.col-empty { text-align: center; padding: 8px 0 4px; }
+.col-empty .chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+
+/* «Уже сделано»: закрытые дела видны сразу, позитив без счётчиков */
+.done-list { margin-top: 12px; display: flex; flex-direction: column; gap: 4px; }
+.done-title { font-size: 12px; margin: 4px 0; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-soft); }
+
+/* спокойный режим (кнопка #calm): декоративный цвет и движение убираются,
+   остаётся структура — ответ на жалобы ADHD-пользователей аналогов на
+   «cluttered» интерфейсы; функциональные акценты (выбор, «сейчас») остаются */
+[data-calm='1'] *,
+[data-calm='1'] *::before,
+[data-calm='1'] *::after { transition: none !important; animation: none !important; }
+[data-calm='1'] .tl-card.task {
+  background: var(--surface) !important;
+  border: 1px solid var(--line-strong);
+  color: var(--ink) !important;
+}
+[data-calm='1'] .tl-card.routine { background: var(--surface-soft); }
+[data-calm='1'] .sphere-dot { background: var(--line-strong) !important; }
+[data-calm='1'] .side-task,
+[data-calm='1'] .pick-task,
+[data-calm='1'] .done-item { border-left-color: var(--line-strong) !important; }
+[data-calm='1'] .focus-card { box-shadow: none; }
+[data-calm='1'] .screen-in { animation: none; }
+.icon-btn.on { background: var(--accent-soft); color: var(--ink); }

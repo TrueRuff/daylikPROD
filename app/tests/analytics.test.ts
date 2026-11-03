@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dayStats } from '../src/core/analytics';
+import { dayStats, doneInLastDays } from '../src/core/analytics';
 import { Task, Practice } from '../src/core/models';
 
 // 2026-10-24 — суббота (день недели 6)
@@ -58,5 +58,57 @@ describe('dayStats', () => {
     const s = dayStats(DATE, todo, [], []);
     expect(s.plannedMin).toBe(0);
     expect(s.overloadMin).toBe(0); // день пуст — места хватает
+  });
+});
+
+describe('doneInLastDays', () => {
+  const doneTask = (id, over = {}) =>
+    new Task({ id, title: `дело ${id}`, group: 'Н', status: 'done', ...over });
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it('считает закрытые дела по направлениям за окно', () => {
+    const now = Date.now();
+    const tasks = [
+      doneTask('a', { sphereId: 's1', doneAt: now - 2 * DAY }),
+      doneTask('b', { sphereId: 's1', doneAt: now - 3 * DAY }),
+      doneTask('c', { sphereId: 's2', doneAt: now - 6 * DAY }),
+      doneTask('d', { sphereId: 's3', doneAt: now - 9 * DAY }), // старше недели
+    ];
+    const m = doneInLastDays(tasks);
+    expect(m.get('s1')).toBe(2);
+    expect(m.get('s2')).toBe(1);
+    expect(m.has('s3')).toBe(false);
+    expect(m.size).toBe(2);
+  });
+
+  it('дело на границе окна (ровно 7 дней назад) ещё считается', () => {
+    const now = Date.now();
+    const m = doneInLastDays([doneTask('a', { sphereId: 's1', doneAt: now - 7 * DAY })]);
+    expect(m.get('s1')).toBe(1);
+  });
+
+  it('дело из будущего не считается', () => {
+    const m = doneInLastDays([doneTask('a', { sphereId: 's1', doneAt: Date.now() + DAY })]);
+    expect(m.size).toBe(0);
+  });
+
+  it('без doneAt или со статусом todo — не считается', () => {
+    const tasks = [
+      doneTask('a', { sphereId: 's1', doneAt: null }), // закрыто давно, до появления поля
+      new Task({ id: 'b', title: 'дело b', group: 'Н', sphereId: 's1', doneAt: Date.now() }), // todo
+    ];
+    expect(doneInLastDays(tasks).size).toBe(0);
+  });
+
+  it('дело без направления не попадает в сводку', () => {
+    const m = doneInLastDays([doneTask('a', { sphereId: null, doneAt: Date.now() })]);
+    expect(m.size).toBe(0);
+  });
+
+  it('пустой список — пустая карта, окно можно задать', () => {
+    expect(doneInLastDays([]).size).toBe(0);
+    const now = Date.now();
+    const m = doneInLastDays([doneTask('a', { sphereId: 's1', doneAt: now - 2 * DAY })], 1);
+    expect(m.size).toBe(0);
   });
 });

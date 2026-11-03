@@ -1,21 +1,22 @@
 // экран «Направления»: три группы Н/Ж/П, карточка направления с описаниями
 // и практиками. Карточку можно перетащить в другую колонку — смена группы.
 
-import { Sphere, Practice, Task } from '../core/models.js';
-import type { SphereGroup } from '../core/models.js';
+import { Sphere, Practice } from '../core/models.js';
+import type { SphereGroup, Task } from '../core/models.js';
 import { categorize } from '../core/categorize.js';
 import {
   getAllSpheres, saveSphere, deleteSphere,
   getPractices, savePractice, deletePractice,
-  getTasks, updateTask, saveTask,
+  getTasks, completeTask,
   exportAll, importAll,
   hasDemoData, deleteDemoData,
 } from '../core/storage.js';
 import { serializeJson, serializeBinary, parseJson, parseBinary, normalizeImport } from '../core/serialization.js';
 import { toIcs } from '../core/ics.js';
+import { doneInLastDays } from '../core/analytics.js';
 import { minutesToTime, timeToMinutes, formatDays } from '../core/schedule.js';
 import { t } from '../core/i18n.js';
-import { escapeHtml, downloadFile, daysCheckboxes, groupOptions, timeRangeFields, normalizeTimeValue } from './dom.js';
+import { escapeHtml, downloadFile, daysCheckboxes, groupOptions, timeRangeFields, normalizeTimeValue, saveParsedTask } from './dom.js';
 import { installClickGuard, DRAG_PX } from './gesture.js';
 import { getDataOwner } from '../core/storage.js';
 
@@ -63,8 +64,8 @@ export function initSpheresScreen(root: HTMLElement): void {
 
   async function renderList(): Promise<void> {
     const spheres = await getAllSpheres();
-    const [allPractices, todoTasks, demo] = await Promise.all([
-      getPractices(), getTasks({ status: 'todo' }), hasDemoData(),
+    const [allPractices, todoTasks, doneTasks, demo] = await Promise.all([
+      getPractices(), getTasks({ status: 'todo' }), getTasks({ status: 'done' }), hasDemoData(),
     ]);
     const freePractices = allPractices.filter((p) => !p.sphereId);
     // счётчики содержимого направления — видны прямо в колонке
@@ -72,6 +73,7 @@ export function initSpheresScreen(root: HTMLElement): void {
     const practiceCount: Record<string, number> = {};
     for (const x of todoTasks) if (x.sphereId) taskCount[x.sphereId] = (taskCount[x.sphereId] || 0) + 1;
     for (const p of allPractices) if (p.sphereId) practiceCount[p.sphereId] = (practiceCount[p.sphereId] || 0) + 1;
+    const weekCount = doneInLastDays(doneTasks);
     root.innerHTML = `
       <h2>${t('spheres.title')}</h2>
       <p class="muted">${t('spheres.intro')}</p>
@@ -86,7 +88,10 @@ export function initSpheresScreen(root: HTMLElement): void {
                 ? list.map((s) => {
                     const n = taskCount[s.id] || 0;
                     const m = practiceCount[s.id] || 0;
-                    const meta = n + m ? `<span class="sphere-meta">${t('spheres.meta', { n, m })}</span>` : '';
+                    const w = weekCount.get(s.id) || 0;
+                    const base = n + m ? t('spheres.meta', { n, m }) : '';
+                    const week = w > 0 ? ` · ${t('areas.weekCount', { n: w })}` : '';
+                    const meta = base || week ? `<span class="sphere-meta">${base}${week}</span>` : '';
                     return `<button class="sphere-item" data-id="${s.id}" title="${t('spheres.dragHint')}"><span class="sphere-name">${escapeHtml(s.name)}</span>${meta}</button>`;
                   }).join('')
                 : `<p class="muted">${t('spheres.empty')}</p>`}
@@ -382,7 +387,8 @@ export function initSpheresScreen(root: HTMLElement): void {
     if (areaDone) {
       const tasks = await getTasks({ status: 'todo' });
       const x = tasks.find((y) => y.id === areaDone.dataset.id);
-      if (x) await updateTask(x.id, { status: 'done', scheduledDate: null, scheduledStart: null });
+      // через completeTask: повторяющееся дело вернётся по расписанию
+      if (x) await completeTask(x);
       await renderList(); // счётчики на колонках тоже меняются
       const addBtn = root.querySelector<HTMLElement>('#add-practice');
       if (addBtn) await openDetail(addBtn.dataset.id as string);
@@ -401,16 +407,7 @@ export function initSpheresScreen(root: HTMLElement): void {
         return;
       }
       const sphereId = target.dataset.sphere as string;
-      await saveTask(new Task({
-        id: crypto.randomUUID(),
-        rawText: text,
-        title: parsed.title,
-        group: parsed.group || 'Н',
-        sphereId,
-        durationMin: parsed.durationMin || 30,
-        status: 'todo',
-        source: parsed.provider,
-      }));
+      await saveParsedTask(text, parsed, sphereId);
       await renderList();
       await openDetail(sphereId);
       return;

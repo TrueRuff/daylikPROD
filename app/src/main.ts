@@ -127,6 +127,7 @@ async function enterApp(acc: Account): Promise<void> {
   addBtn.hidden = false;
   helpBtn.hidden = false;
   themeBtn.hidden = false;
+  calmBtn.hidden = false;
   logTabBtn.hidden = !isAdmin(acc);
   refreshBell();
   // в пустой аккаунт — демо-день второй смены, в остальные — базовые дела
@@ -218,6 +219,27 @@ themeBtn.addEventListener('click', () => {
   }
   refreshThemeBtn();
   log.info('theme.change', { theme: next });
+});
+
+// спокойный режим: меньше цвета и движения — ответ на жалобы ADHD-пользователей
+// аналогов на «cluttered» интерфейсы; включённое состояние видно по стилю кнопки
+const calmBtn = document.getElementById('calm') as HTMLButtonElement;
+const CALM_KEY = 'daylik-calm';
+
+function refreshCalmBtn(): void {
+  calmBtn.classList.toggle('on', document.documentElement.dataset.calm === '1');
+}
+
+calmBtn.addEventListener('click', () => {
+  const on = document.documentElement.dataset.calm === '1';
+  if (on) delete document.documentElement.dataset.calm;
+  else document.documentElement.dataset.calm = '1';
+  try {
+    localStorage.setItem(CALM_KEY, on ? '0' : '1');
+  } catch {
+    // сохранение не критично
+  }
+  refreshCalmBtn();
 });
 refreshThemeBtn();
 

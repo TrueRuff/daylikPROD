@@ -3,7 +3,7 @@
 // работает и на телефоне), перетаскиванием карточки, растягиванием за нижний
 // край, кликом в колонке дел или автоматически.
 
-import { getPractices, getTasks, updateTask, deleteTask, getAllSpheres, completeTask, savePractice, deletePractice, saveTask } from '../core/storage.js';
+import { getPractices, getTasks, updateTask, deleteTask, getAllSpheres, completeTask, savePractice, deletePractice, saveTask, getDataOwner } from '../core/storage.js';
 import type { TaskPatch } from '../core/storage.js';
 import { categorize } from '../core/categorize.js';
 import { breakdownWithLlm } from '../ai/llmClient.js';
@@ -21,7 +21,7 @@ import { t, getLang } from '../core/i18n.js';
 import {
   escapeHtml, daysCheckboxes, groupOptions, timeRangeFields, timeInput,
   normalizeTimeValue, bindTimeMasks, remindFieldsHtml, handleRemindClick, readRemindInput,
-  sphereColor,
+  sphereColor, repeatFieldsHtml, saveParsedTask, presetChipKeys,
 } from './dom.js';
 import { installClickGuard, DRAG_PX } from './gesture.js';
 
@@ -129,6 +129,13 @@ function nowMinutes(): number {
   return d.getHours() * 60 + d.getMinutes();
 }
 
+// поставленное дело как отрезок занятости таймлайна
+const occOf = (x: Task): { start: number; end: number; label: string } => ({
+  start: x.scheduledStart as number,
+  end: (x.scheduledStart as number) + x.durationMin,
+  label: x.title,
+});
+
 export function initDayScreen(root: HTMLElement): void {
   let editing: string | null = null;   // id редактируемого дела
   let state: DayState | null = null;   // данные текущей отрисовки
@@ -139,6 +146,31 @@ export function initDayScreen(root: HTMLElement): void {
   let editPractice: string | null = null; // id редактируемого блока дня (рутины)
   let pickAt: number | null = null;    // минута выбранного на таймлайне окна (выбор дела)
   let scrolledToNow = false;
+
+  // таймер работы над делом: внешний каркас времени (как в Routinery/Tiimo).
+  // Хранится в localStorage — переживает перезагрузку страницы
+  let timer: { taskId: string; end: number } | null = null;
+  let timerTick: ReturnType<typeof setInterval> | null = null;
+  try {
+    const raw = localStorage.getItem('daylik-timer:' + getDataOwner());
+    if (raw) timer = JSON.parse(raw);
+  } catch {
+    // битая запись таймера — просто нет таймера
+  }
+  const saveTimer = () => {
+    try {
+      if (timer) localStorage.setItem('daylik-timer:' + getDataOwner(), JSON.stringify(timer));
+      else localStorage.removeItem('daylik-timer:' + getDataOwner());
+    } catch {
+      // сохранение не критично
+    }
+  };
+  const clearTimer = () => {
+    timer = null;
+    if (timerTick) clearInterval(timerTick);
+    timerTick = null;
+    saveTimer();
+  };
 
   // каркас живёт всё время экрана: шапка и колонка перерисовываются,
   // таймлайн перерисовывается вместе с ними
@@ -187,15 +219,7 @@ export function initDayScreen(root: HTMLElement): void {
 
     const blocks: TimelineBlock[] = [
       ...practicesToBlocks(practices).map((r) => ({ ...r, kind: 'routine' as const })),
-      ...scheduled.map((x) => ({
-        start: x.scheduledStart as number,
-        end: (x.scheduledStart as number) + x.durationMin,
-        kind: 'task' as const,
-        label: x.title,
-        taskId: x.id,
-        group: x.group,
-        sphereId: x.sphereId,
-      })),
+      ...scheduled.map((x) => ({ ...occOf(x), kind: 'task' as const, taskId: x.id, group: x.group, sphereId: x.sphereId })),
     ].sort((a, b) => a.start - b.start);
     // пока читали базу, началась более свежая отрисовка — эту бросаем
     if (gen !== renderGen) return;
@@ -238,6 +262,10 @@ export function initDayScreen(root: HTMLElement): void {
     const dateLabel = new Date().toLocaleDateString(getLang() === 'en' ? 'en-GB' : 'ru-RU',
       { weekday: 'long', day: 'numeric', month: 'long' });
 
+    // режим «мало сил»: экран сжимается — без перегруз-предупреждений,
+    // колонка дел режется до трёх, фокус-карточка говорит «достаточно и одного»
+    const low = energy === 'low';
+
     topEl.innerHTML = `
       <div class="day-head">
         <div>
@@ -245,6 +273,7 @@ export function initDayScreen(root: HTMLElement): void {
           <p class="day-date">${dateLabel}</p>
         </div>
       </div>
+      ${timerHtml()}
       ${welcomeSeen() ? '' : `
       <div class="card welcome">
         <strong>${t('welcome.title')}</strong>
@@ -269,13 +298,12 @@ export function initDayScreen(root: HTMLElement): void {
                 aria-pressed="${e === energy}">${t(`energy.${e}`)}</button>`).join('')}
           </div>
         </div>
-        <button id="auto-place" class="secondary">${t('day.autoPlace')}</button>
         <button id="what-now" class="what-now-btn">${t('day.whatNow')}</button>
         <p class="energy-hint muted">${t(`energy.hint.${energy}`)}</p>
       </div>
       ${whatNow === 'empty' ? `<div class="card"><p class="muted">${t('day.whatNowEmpty')}</p></div>` : whatNow ? whatNowHtml(whatNow) : ''}
       <p class="muted">${stats.summary}${todo.length || routines.length ? '' : ` — ${t('day.emptyHint')}`}</p>
-      ${stats.overloadMin > 0 ? `<p class="overload">${t('day.overload', { time: fmt(stats.overloadMin) })}</p>` : ''}
+      ${!low && stats.overloadMin > 0 ? `<p class="overload">${t('day.overload', { time: fmt(stats.overloadMin) })}</p>` : ''}
       ${overdue.length ? `
       <div class="card overdue-box">
         <span>${t('day.overdue', { n: overdue.length })}</span>
@@ -293,20 +321,40 @@ export function initDayScreen(root: HTMLElement): void {
     modalEl.hidden = !modalHtml;
     modalEl.innerHTML = modalHtml ? `<div class="modal-overlay"><div class="modal-card">${modalHtml}</div></div>` : '';
 
+    // режим «мало сил»: колонка режется до трёх дел, остальные — за details
+    // (никуда не денутся, просто не давят); «норм»/«много» — как раньше
+    const shown = low ? placeable.slice(0, 3) : placeable;
+    const hiddenCount = placeable.length - shown.length;
+
     sideEl.innerHTML = `
-      <h3>${t('day.tasks')}</h3>
+      <div class="side-head">
+        <h3>${t('day.tasks')}</h3>
+        <button id="auto-place" class="secondary">${t('day.autoPlace')}</button>
+      </div>
       ${unscheduled.length
-        ? [...placeable, ...notFitting].map((x) => taskRowHtml(x, fits(x))).join('')
-        : `<p class="muted">${t('day.noTasks')}</p>`}
+        ? [...shown, ...notFitting].map((x) => taskRowHtml(x, fits(x))).join('')
+          + (hiddenCount > 0 ? `
+      <details class="more-params col-more">
+        <summary>${t('day.colMore', { n: hiddenCount })}</summary>
+        ${placeable.slice(3).map((x) => taskRowHtml(x, fits(x))).join('')}
+      </details>` : '')
+        : `<div class="col-empty">
+            <p class="muted">${t('day.startOne')}</p>
+            <div class="chips">
+              ${presetChipKeys().map((key) => `<button type="button" class="grp chip" data-empty-preset="${key}">${t(key)}</button>`).join('')}
+            </div>
+          </div>`}
       ${done.length ? `
-      <details class="done-box">
-        <summary>${t('day.doneCount', { n: done.length })}</summary>
-        ${done.slice(0, 15).map((task) => {
-          const c = task.sphereId && state!.sphereColors[task.sphereId];
-          return `
-          <button class="done-item" data-id="${task.id}" title="${t('task.return')}"${c ? ` style="--task-c:${c}"` : ''}>${taskLabel(task)}</button>`;
-        }).join('')}
-      </details>` : ''}`;
+      <div class="done-list">
+        <span class="done-title">${t('day.doneToday')}</span>
+        ${done.slice(0, 3).map(doneItemHtml).join('')}
+        ${done.length > 3 ? `
+        <details class="done-box">
+          <summary>${t('day.doneMore', { n: done.length - 3 })}</summary>
+          ${done.slice(3, 18).map(doneItemHtml).join('')}
+        </details>` : ''}
+      </div>` : ''}`;
+    startTimerTick();
   }
 
   // общая подпись дела: название, длительность, метка направления; цвет
@@ -315,6 +363,11 @@ export function initDayScreen(root: HTMLElement): void {
     `${task.repeatRule ? '<span class="routine-mark">↻</span>' : ''}${escapeHtml(task.title)} <span class="muted">${task.durationMin} ${t('task.minutes')}`
     + (task.sphereId && state!.sphereNames[task.sphereId] ? ` · ${escapeHtml(state!.sphereNames[task.sphereId])}` : '')
     + `${suffix}</span>`;
+
+  const doneItemHtml = (task: Task): string => {
+    const c = task.sphereId && state!.sphereColors[task.sphereId];
+    return `<button class="done-item" data-id="${task.id}" title="${t('task.return')}"${c ? ` style="--task-c:${c}"` : ''}>${taskLabel(task)}</button>`;
+  };
 
   function taskRowHtml(task: Task, canPlace: boolean): string {
     // не влезающее дело остаётся кликабельным — встанет в первое окно
@@ -358,15 +411,7 @@ export function initDayScreen(root: HTMLElement): void {
             return { date: d, time: tm, open: Boolean(task.dueAt) };
           })())}
           <div class="row">
-            <label>${t('repeat.label')}
-              <select id="e-repeat">
-                <option value="">${t('repeat.none')}</option>
-                <option value="daily"${task.repeatRule === 'daily' ? ' selected' : ''}>${t('repeat.daily')}</option>
-                <option value="weekly"${task.repeatRule === 'weekly' ? ' selected' : ''}>${t('repeat.weekly')}</option>
-                <option value="every"${/^every:/.test(task.repeatRule || '') ? ' selected' : ''}>${t('repeat.every')}</option>
-              </select>
-            </label>
-            <label id="e-repeat-n-wrap" hidden>${t('repeat.everyDays')} <input id="e-repeat-n" type="number" min="2" max="30" value="${(/^every:(\d+)/.exec(task.repeatRule || '') || [])[1] || 3}"></label>
+            ${repeatFieldsHtml('e', task.repeatRule)}
           </div>
           <label>${t('common.sphere')}
             <select id="e-sphere">
@@ -408,18 +453,63 @@ export function initDayScreen(root: HTMLElement): void {
       </div>`;
   }
 
+  // остаток таймера строкой: М:СС, после нуля — мягкая фраза
+  const fmtLeft = (ms: number) => {
+    if (ms <= 0) return t('day.timerOver');
+    const total = Math.ceil(ms / 1000);
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  };
+
+  // карточка «В работе»: одна задача и живой обратный отсчёт.
+  // Дело исчезло или закрыто — таймер молча снимается
+  function timerHtml(): string {
+    if (!timer || !state) return '';
+    const task = state.allTasks.find((x) => x.id === timer!.taskId && x.status === 'todo');
+    if (!task) {
+      clearTimer();
+      return '';
+    }
+    const dot = task.sphereId && state.sphereColors[task.sphereId]
+      ? `<span class="sphere-dot big" style="background:${state.sphereColors[task.sphereId]}"></span>` : '';
+    return `
+      <div class="card focus-card timer-card">
+        <span class="focus-label">${t('day.timerOn')}</span>
+        <div class="focus-task">
+          ${dot}<strong>${escapeHtml(task.title)}</strong>
+          <span class="muted" id="timer-left">${fmtLeft(timer.end - Date.now())}</span>
+        </div>
+        <div class="row">
+          <button id="timer-done" data-id="${task.id}">${t('task.markDone')}</button>
+          <button id="timer-more" class="secondary">${t('day.timerMore')}</button>
+          <button id="timer-stop" class="secondary">${t('day.timerStop')}</button>
+        </div>
+      </div>`;
+  }
+
+  // секундный тик обновляет только текст отсчёта, без перерисовки экрана
+  function startTimerTick(): void {
+    if (timerTick) clearInterval(timerTick);
+    if (!timer) return;
+    timerTick = setInterval(() => {
+      const el = root.querySelector('#timer-left');
+      if (!el || !timer) return;
+      el.textContent = fmtLeft(timer.end - Date.now());
+    }, 1000);
+  }
+
   function whatNowHtml(rec: Recommendation): string {
     const dot = rec.task.sphereId && state!.sphereColors[rec.task.sphereId]
       ? `<span class="sphere-dot big" style="background:${state!.sphereColors[rec.task.sphereId]}"></span>` : '';
     return `
       <div class="card focus-card">
-        <span class="focus-label">${t('day.whatNow')}</span>
+        <span class="focus-label">${energy === 'low' ? t('day.focusSingle') : t('day.whatNow')}</span>
         <div class="focus-task">
           ${dot}<strong>${escapeHtml(rec.task.title)}</strong>
           <span class="muted">${t('day.whatNowHint', { b: minutesToTime(rec.end), dur: rec.task.durationMin, title: rec.task.title })}</span>
         </div>
         <div class="row">
-          <button id="whatnow-place" data-id="${rec.task.id}" data-start="${rec.start}">${t('day.whatNowPlace')} ${minutesToTime(rec.start)}</button>
+          <button id="whatnow-start" data-id="${rec.task.id}">${t('day.timerGo')}</button>
+          <button id="whatnow-place" data-id="${rec.task.id}" data-start="${rec.start}" class="secondary">${t('day.whatNowPlace')} ${minutesToTime(rec.start)}</button>
           <button id="whatnow-skip" class="secondary">${t('day.whatNowSkip')}</button>
           <button id="whatnow-close" class="secondary">${t('common.close')}</button>
         </div>
@@ -512,10 +602,7 @@ export function initDayScreen(root: HTMLElement): void {
 
   async function autoPlace(): Promise<void> {
     const { date, routines, scheduled, unscheduled } = state!;
-    const occupancy: Occupancy[] = [
-      ...routines,
-      ...scheduled.map((x) => ({ start: x.scheduledStart as number, end: (x.scheduledStart as number) + x.durationMin, label: x.title })),
-    ];
+    const occupancy: Occupancy[] = [...routines, ...scheduled.map(occOf)];
     const limit = autoPlaceLimit(energy);
     const batch = adaptiveSort(unscheduled, energy).slice(0, limit);
     const plan = buildDay(date, occupancy, batch, { sort: (xs) => adaptiveSort(xs, energy) });
@@ -751,6 +838,49 @@ export function initDayScreen(root: HTMLElement): void {
       return;
     }
 
+    // «Начать»: дело встаёт на сейчас и запускается обратный отсчёт —
+    // время становится видимым, решение «сколько работать» снимается
+    if (target.closest('#whatnow-start')) {
+      const rec = whatNow;
+      if (rec && rec !== 'empty' && state) {
+        const now = Math.round(nowMinutes() / 5) * 5 % 1440;
+        await updateTask(rec.task.id, { scheduledDate: state.date, scheduledStart: now });
+        timer = { taskId: rec.task.id, end: Date.now() + rec.task.durationMin * 60000 };
+        saveTimer();
+        whatNow = null;
+        whatNowAuto = false; // работаем над делом — следующие подсказки ни к чему
+        render();
+      }
+      return;
+    }
+
+    if (target.closest('#timer-done')) {
+      const btn = target.closest<HTMLElement>('#timer-done')!;
+      const task = state?.allTasks.find((x) => x.id === btn.dataset.id);
+      clearTimer();
+      if (task) await completeTask(task);
+      render();
+      return;
+    }
+
+    if (target.closest('#timer-stop')) {
+      // остановка без «провала»: дело остаётся в расписании, отсчёт снимается
+      clearTimer();
+      render();
+      return;
+    }
+
+    // «+10 мин»: время докидывается, когда непонятно, сколько осталось работать
+    if (target.closest('#timer-more')) {
+      if (timer) {
+        timer.end += 10 * 60000;
+        saveTimer();
+        const el = root.querySelector('#timer-left');
+        if (el) el.textContent = fmtLeft(timer.end - Date.now());
+      }
+      return;
+    }
+
     if (target.closest('#welcome-ok')) {
       try {
         localStorage.setItem(WELCOME_KEY, '1');
@@ -812,6 +942,17 @@ export function initDayScreen(root: HTMLElement): void {
 
     if (target.closest('#quick-save')) {
       await quickAdd();
+      return;
+    }
+
+    // пример в пустой колонке: подставить текст в быстрый ввод и создать
+    const emptyPreset = target.closest<HTMLElement>('[data-empty-preset]');
+    if (emptyPreset) {
+      const input = root.querySelector<HTMLInputElement>('#quick-add');
+      if (input) {
+        input.value = t(emptyPreset.dataset.emptyPreset!);
+        await quickAdd();
+      }
       return;
     }
 
@@ -968,15 +1109,7 @@ export function initDayScreen(root: HTMLElement): void {
       if (msg) msg.textContent = parsed.kind === 'routine' ? t('day.quickRoutineHint') : t('day.quickSphereHint');
       return;
     }
-    await saveTask(new Task({
-      id: crypto.randomUUID(),
-      rawText: text,
-      title: parsed.title,
-      group: parsed.group || 'Н',
-      durationMin: parsed.durationMin || 30,
-      status: 'todo',
-      source: parsed.provider,
-    }));
+    await saveParsedTask(text, parsed);
     input.value = '';
     if (msg) msg.textContent = '';
     render();
