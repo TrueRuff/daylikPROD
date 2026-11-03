@@ -15,6 +15,9 @@ export function downloadFile(name: string, blob: Blob): void {
 
 import { dayNames, todayStr, addDays, localInputToTs } from '../core/schedule.js';
 import { t } from '../core/i18n.js';
+import { Task } from '../core/models.js';
+import type { CategorizeResult } from '../core/categorize.js';
+import { saveTask } from '../core/storage.js';
 
 // чекбоксы дней недели (1..7) — квадратики вплотную, состояние внутри плитки
 export function daysCheckboxes(selected: number[] = [1, 2, 3, 4, 5, 6, 7]): string {
@@ -37,6 +40,19 @@ export function sphereColor(id: unknown): string {
   let h = 0;
   for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) % SPHERE_HUES.length;
   return `hsl(${SPHERE_HUES[h]}, 55%, 52%)`;
+}
+
+// примеры дел: пул больше показываемого, четвёрка меняется со сменой суток —
+// приложение не приедается (жалоба «бросают через неделю»)
+const PRESET_KEYS = [
+  'input.preset1', 'input.preset2', 'input.preset3', 'input.preset4',
+  'input.preset5', 'input.preset6', 'input.preset7', 'input.preset8',
+];
+
+export function presetChipKeys(): string[] {
+  const day = Math.floor(Date.now() / 86400000);
+  const offset = day % PRESET_KEYS.length;
+  return [0, 1, 2, 3].map((i) => PRESET_KEYS[(offset + i) % PRESET_KEYS.length]);
 }
 
 // поле времени: 4 цифры (две в часы, две в минуты), двоеточие появляется само
@@ -131,4 +147,36 @@ export function readRemindInput(root: ParentNode, prefix: string): number | null
   if (!date) return null;
   const time = normalizeTimeValue(root.querySelector<HTMLInputElement>(`.js-${prefix}-remind-time`)?.value) || '09:00';
   return localInputToTs(`${date}T${time}`);
+}
+
+// выбор повтора: селект + поле «каждые N дней»; видно, когда выбран every
+export function repeatFieldsHtml(prefix: string, rule: string | null = null, allowNone = true): string {
+  const every = /^every:(\d+)/.exec(rule || '');
+  const kind = rule === 'daily' || rule === 'weekly' ? rule : (every ? 'every' : '');
+  return `
+    <div class="row">
+      <label>${t('repeat.label')}
+        <select id="${prefix}-repeat">
+          ${allowNone ? `<option value="">${t('repeat.none')}</option>` : ''}
+          <option value="daily"${kind === 'daily' ? ' selected' : ''}>${t('repeat.daily')}</option>
+          <option value="weekly"${kind === 'weekly' ? ' selected' : ''}>${t('repeat.weekly')}</option>
+          <option value="every"${kind === 'every' ? ' selected' : ''}>${t('repeat.every')}</option>
+        </select>
+      </label>
+      <label id="${prefix}-repeat-n-wrap"${kind === 'every' ? '' : ' hidden'}>${t('repeat.everyDays')} <input id="${prefix}-repeat-n" type="number" min="2" max="30" value="${every?.[1] || 3}"></label>
+    </div>`;
+}
+
+// быстрое дело из разбора (экран дня, карточка направления): сохранить как разовое
+export async function saveParsedTask(text: string, parsed: CategorizeResult, sphereId: string | null = null): Promise<Task> {
+  return saveTask(new Task({
+    id: crypto.randomUUID(),
+    rawText: text,
+    title: parsed.title,
+    group: parsed.group || 'Н',
+    sphereId,
+    durationMin: parsed.durationMin || 30,
+    status: 'todo',
+    source: parsed.provider,
+  }));
 }

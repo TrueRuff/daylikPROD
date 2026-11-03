@@ -65,7 +65,7 @@ export function eventsForRange(fromDate: string, toDate: string, practices: Prac
   return events;
 }
 
-export function taskEvent(task: Task, date: string = task.scheduledDate as string): CalEvent {
+function taskEvent(task: Task, date: string = task.scheduledDate as string): CalEvent {
   const timed = task.scheduledStart != null;
   return {
     id: `t:${task.id}`,

@@ -37,9 +37,7 @@ export interface IcsOptions {
   stamp?: string; // строка DTSTAMP 'YYYYMMDDTHHMMSS'
 }
 
-/**
- * @param tasks дела с scheduledDate (другие пропускаются)
- */
+// дела без даты на таймлайне пропускаются
 export function toIcs(tasks: Task[], opts: IcsOptions = {}): string {
   const stamp = opts.stamp || icsDate('2026-01-01', 0);
   const lines = [

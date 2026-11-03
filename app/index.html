@@ -17,6 +17,7 @@
         else if (matchMedia('(prefers-color-scheme: dark)').matches) {
           document.documentElement.dataset.theme = 'dark';
         }
+        if (localStorage.getItem('daylik-calm') === '1') document.documentElement.dataset.calm = '1';
       } catch {}
     </script>
   </head>
@@ -59,6 +60,9 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 9.5a3 3 0 1 1 4.2 2.8c-.9.4-1.2 1-1.2 2v.7"/><path d="M12 18h.01"/></svg>
             </button>
             <button id="lang" class="icon-btn" hidden>EN</button>
+            <button id="calm" class="icon-btn" data-i18n-title="calm.title" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3.5 12h17M12 3.5v17"/><path d="M7 7l10 10M17 7L7 17"/></svg>
+            </button>
             <button id="theme" class="icon-btn" data-i18n-title="theme.toggle" hidden>☾</button>
             <button id="bell" class="icon-btn" data-i18n-title="bell.enable" hidden>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 9a6 6 0 1 0-12 0c0 5-2 6-2 6h16s-2-1-2-6"/><path d="M10 19a2.2 2.2 0 0 0 4 0"/></svg>

@@ -8,7 +8,7 @@ import { Task, Sphere } from '../core/models.js';
 import type { SphereGroup } from '../core/models.js';
 import { saveTask, saveSphere, getAllSpheres } from '../core/storage.js';
 import { t, onChange } from '../core/i18n.js';
-import { escapeHtml, bindTimeMasks, remindFieldsHtml, handleRemindClick, readRemindInput, sphereColor } from './dom.js';
+import { escapeHtml, bindTimeMasks, remindFieldsHtml, handleRemindClick, readRemindInput, sphereColor, repeatFieldsHtml, presetChipKeys } from './dom.js';
 
 type AddKind = 'task' | 'ongoing' | 'sphere';
 
@@ -41,56 +41,35 @@ const TYPE_ICONS: Record<AddKind, string> = {
   sphere: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M15.2 8.8l-1.8 4.6-4.6 1.8 1.8-4.6z"/></svg>',
 };
 
-// поля, зависящие от типа: при смене типа перерисовывается только этот блок,
-// кнопки типов/группы и набранный текст остаются на месте (без мерцания).
-// «Продолжительное» — дело с повтором (проект по 30 минут в день); рутины
-// (сон, готовка) создаются не здесь, а на «Направлениях».
-function extraHtml(): string {
-  if (state!.kind === 'ongoing') {
-    const def = state!.parsed.durationMin || 30;
-    return `
+// длительность: поле + чипы быстрого выбора — общие для разового и продолжительного
+function durationHtml(def: number): string {
+  return `
       <div class="row">
         <label>${t('task.duration')} <input id="c-dur" type="number" min="5" step="5" value="${def}"></label>
       </div>
       <div class="chips">
         ${[10, 20, 30, 60].map((m) => `<button type="button" class="grp chip${m === def ? ' on' : ''}" data-dur="${m}">${m}</button>`).join('')}
-      </div>
-      <div class="row">
-        <label>${t('repeat.label')}
-          <select id="c-repeat">
-            <option value="daily">${t('repeat.daily')}</option>
-            <option value="weekly">${t('repeat.weekly')}</option>
-            <option value="every">${t('repeat.every')}</option>
-          </select>
-        </label>
-        <label id="c-repeat-n-wrap" hidden>${t('repeat.everyDays')} <input id="c-repeat-n" type="number" min="2" max="30" value="3"></label>
       </div>`;
+}
+
+// поля, зависящие от типа: при смене типа перерисовывается только этот блок,
+// кнопки типов/группы и набранный текст остаются на месте (без мерцания).
+// «Продолжительное» — дело с повтором (проект по 30 минут в день); рутины
+// (сон, готовка) создаются не здесь, а на «Направлениях».
+function extraHtml(): string {
+  const def = state!.parsed.durationMin || 30;
+  if (state!.kind === 'ongoing') {
+    return `${durationHtml(def)}
+      ${repeatFieldsHtml('c', null, false)}`;
   }
   if (state!.kind !== 'task') return '';
-  const def = state!.parsed.durationMin || 30;
-  return `
-    <div class="row">
-      <label>${t('task.duration')} <input id="c-dur" type="number" min="5" step="5" value="${def}"></label>
-    </div>
-    <div class="chips">
-      ${[10, 20, 30, 60].map((m) => `<button type="button" class="grp chip${m === def ? ' on' : ''}" data-dur="${m}">${m}</button>`).join('')}
-    </div>
+  return `${durationHtml(def)}
     <details class="more-params">
       <summary>${t('task.moreParams')}</summary>
       <p class="muted">${t('task.moreParamsHint')}</p>
       <label>${t('task.remind')}</label>
       ${remindFieldsHtml('c')}
-      <div class="row">
-        <label>${t('repeat.label')}
-          <select id="c-repeat">
-            <option value="">${t('repeat.none')}</option>
-            <option value="daily">${t('repeat.daily')}</option>
-            <option value="weekly">${t('repeat.weekly')}</option>
-            <option value="every">${t('repeat.every')}</option>
-          </select>
-        </label>
-        <label id="c-repeat-n-wrap" hidden>${t('repeat.everyDays')} <input id="c-repeat-n" type="number" min="2" max="30" value="3"></label>
-      </div>
+      ${repeatFieldsHtml('c')}
     </details>`;
 }
 
@@ -161,10 +140,7 @@ function render(): void {
         </div>
         ${state || savedMsg ? '' : `
         <div class="chips">
-          <button type="button" class="grp chip" data-preset="input.preset1">${t('input.preset1')}</button>
-          <button type="button" class="grp chip" data-preset="input.preset2">${t('input.preset2')}</button>
-          <button type="button" class="grp chip" data-preset="input.preset3">${t('input.preset3')}</button>
-          <button type="button" class="grp chip" data-preset="input.preset4">${t('input.preset4')}</button>
+          ${presetChipKeys().map((key) => `<button type="button" class="grp chip" data-preset="${key}">${t(key)}</button>`).join('')}
         </div>`}
         <div id="confirm">${confirmHtml}</div>
       </div>
@@ -229,13 +205,28 @@ async function parse(): Promise<void> {
   const rawEl = root!.querySelector<HTMLInputElement>('#raw')!;
   const text = rawEl.value.trim();
   if (!text) return;
-  const [parsed, spheres] = await Promise.all([categorize(text), getAllSpheres()]);
-  // рутина из разбора — это продолжительное дело; сами рутины создаются на «Направлениях»
-  const kind: AddKind = parsed.kind === 'routine' ? 'ongoing' : parsed.kind;
-  // предлагаем направление с той же группой, что вышла из разбора —
-  // пользователь подтверждает одним тапом, а не ищет в селекте
-  const suggested = parsed.group ? spheres.find((s) => s.group === parsed.group) : null;
-  state = { parsed, kind, rawText: text, group: parsed.group || 'П', spheres, sphere: kind === 'task' || kind === 'ongoing' ? (suggested?.id || '') : '' };
+  // разбор может идти несколько секунд (LLM) — кнопка показывает, что работает
+  const parseBtn = root!.querySelector<HTMLButtonElement>('#parse');
+  if (!parseBtn || parseBtn.disabled) return;
+  parseBtn.disabled = true;
+  parseBtn.textContent = '…';
+  try {
+    const [parsed, spheres] = await Promise.all([categorize(text), getAllSpheres()]);
+    // рутина из разбора — это продолжительное дело; сами рутины создаются на «Направлениях»
+    const kind: AddKind = parsed.kind === 'routine' ? 'ongoing' : parsed.kind;
+    // предлагаем направление с той же группой, что вышла из разбора —
+    // пользователь подтверждает одним тапом, а не ищет в селекте
+    const suggested = parsed.group ? spheres.find((s) => s.group === parsed.group) : null;
+    state = { parsed, kind, rawText: text, group: parsed.group || 'П', spheres, sphere: kind === 'task' || kind === 'ongoing' ? (suggested?.id || '') : '' };
+  } finally {
+    // после успешного разбора render() перерисует модалку с новой кнопкой;
+    // здесь возвращаем кнопку на случай, если разбор не дошёл до отрисовки
+    const btn = root!.querySelector<HTMLButtonElement>('#parse');
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = t('input.parse');
+    }
+  }
   render();
   root!.querySelector<HTMLInputElement>('#raw')?.focus();
 }

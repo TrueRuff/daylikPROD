@@ -173,7 +173,7 @@ export async function deleteTask(id: string): Promise<void> {
 // следующее вхождение (та же длительность/группа/повтор, место в расписании —
 // на следующую дату). Возвращает созданное вхождение или null.
 export async function completeTask(task: Task): Promise<Task | null> {
-  await updateTask(task.id, { status: 'done', scheduledDate: null, scheduledStart: null });
+  await updateTask(task.id, { status: 'done', doneAt: Date.now(), scheduledDate: null, scheduledStart: null });
   const patch = nextOccurrence(task);
   if (!patch) return null;
 

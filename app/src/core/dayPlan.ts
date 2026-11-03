@@ -86,10 +86,8 @@ export function autoPlaceLimit(energy: Energy): number {
   return energy === 'low' ? 3 : Infinity;
 }
 
-/**
- * одна рекомендация «что сейчас»: свободное окно, содержащее текущую минуту
- * (или ближайшее впереди), и первое подходящее по длительности и энергии дело.
- */
+// рекомендация «что сейчас»: окно с текущей минутой (или ближайшее впереди),
+// в нём — первое подходящее по длительности и энергии дело
 export function recommendNow(windows: FreeWindow[], tasks: Task[], nowMin: number, energy: Energy): Recommendation | null {
   const win = windows.find((w) => nowMin >= w.start && nowMin < w.end)
     || windows.find((w) => w.start > nowMin);

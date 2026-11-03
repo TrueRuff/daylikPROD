@@ -23,7 +23,7 @@ export interface CategorizeResult {
 // \b в JS не знает кириллицы, поэтому конец слова — lookahead (?![а-яё]).
 const DURATION_RE = /(?:на\s+|за\s+)?(?:(\d+)\s*(минут[а-яё]*|мин|час[а-яё]*|ч)(?![а-яё])|полчаса|полтора\s+часа)/i;
 
-export function extractDuration(text: string): number | null {
+function extractDuration(text: string): number | null {
   const m = text.match(DURATION_RE);
   if (!m) return null;
   if (/полчаса/i.test(m[0])) return 30;
