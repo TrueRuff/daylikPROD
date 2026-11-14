@@ -172,22 +172,28 @@ export async function deleteTask(id: string): Promise<void> {
 // завершение дела: обычное — просто done; повторяющееся — done + создаётся
 // следующее вхождение (та же длительность/группа/повтор, место в расписании —
 // на следующую дату). Возвращает созданное вхождение или null.
+// Транзакция и перепроверка статуса: двойной клик «✓» не дублирует вхождения.
 export async function completeTask(task: Task): Promise<Task | null> {
-  await updateTask(task.id, { status: 'done', doneAt: Date.now(), scheduledDate: null, scheduledStart: null });
-  const patch = nextOccurrence(task);
-  if (!patch) return null;
+  return db.transaction('rw', db.tasks, async () => {
+    const fresh = await db.tasks.get(task.id);
+    if (!fresh || fresh.status === 'done') return null;
+    const current = new Task(fresh);
+    await db.tasks.update(task.id, { status: 'done', doneAt: Date.now(), scheduledDate: null, scheduledStart: null });
+    const patch = nextOccurrence(current);
+    if (!patch) return null;
 
-  const next = new Task({
-    ...task,
-    id: crypto.randomUUID(),
-    status: 'todo',
-    createdAt: Date.now(),
-    dueAt: null,
-    ...patch,
+    const next = new Task({
+      ...current,
+      id: crypto.randomUUID(),
+      status: 'todo',
+      createdAt: Date.now(),
+      dueAt: null,
+      ...patch,
+    });
+    await db.tasks.put(next);
+    log.info('task.recurring.next', { title: next.title, rule: next.repeatRule, date: next.scheduledDate });
+    return next;
   });
-  await db.tasks.put(next);
-  log.info('task.recurring.next', { title: next.title, rule: next.repeatRule, date: next.scheduledDate });
-  return next;
 }
 
 // задачи с наступившим временем напоминания.

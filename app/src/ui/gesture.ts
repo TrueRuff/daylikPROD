@@ -5,8 +5,40 @@
 
 const DRAG_PX = 8;        // сдвиг, после которого нажатие считается жестом
 const CLICK_WINDOW_MS = 500; // сколько ждём click после отпускания
+export const LONG_PRESS_MS = 350; // удержание пальца, после которого стартует перетаскивание
+export const ARM_MOVE_PX = 10;    // сдвиг до срабатывания — это скролл, не жест
+const SCROLL_CLICK_MS = 300;      // клики столько мс после скролла считаются случайными
 
 export { DRAG_PX };
+
+// long-press для touch-перетаскивания: карточка с touch-action: pan-y листает
+// список пальцем, а тащится только после удержания на месте. Возвращает
+// отмену таймера; onArm срабатывает, если палец не сдвинулся и не ушёл в скролл
+export function armOnLongPress(onArm: () => void): () => void {
+  const t = setTimeout(onArm, LONG_PRESS_MS);
+  return () => clearTimeout(t);
+}
+
+// случайный клик по кнопке при остановке скролла (большой палец на телефоне):
+// гасим touch-клики, пришедшие вскоре после скролла. Колесо мыши не считаем —
+// скролл и клик там раздельные намеренные действия
+export function installScrollClickGuard(): void {
+  let lastScrollAt = 0;
+  let lastPointerType = 'mouse';
+  document.addEventListener('pointerup', (e) => {
+    lastPointerType = e.pointerType || 'mouse';
+  }, true);
+  document.addEventListener('scroll', () => {
+    lastScrollAt = Date.now();
+  }, { capture: true, passive: true });
+  document.addEventListener('click', (e) => {
+    if (lastPointerType !== 'touch') return;
+    if (Date.now() - lastScrollAt >= SCROLL_CLICK_MS) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+  }, true);
+}
 
 interface PointerMark {
   x: number;

@@ -13,6 +13,7 @@ import { getDueReminders, updateTask, initLog, setDataOwner } from './core/stora
 import { restoreSession, logout as authLogout, isAdmin } from './core/auth.js';
 import { seedOnLogin } from './core/demoData.js';
 import { openOnboarding } from './ui/onboarding.js';
+import { installScrollClickGuard } from './ui/gesture.js';
 import { log } from './core/log.js';
 import { getLang, setLang, onChange, applyStatic, t } from './core/i18n.js';
 import type { Account } from './core/storage.js';
@@ -42,6 +43,9 @@ addBtn.addEventListener('click', () => openAddModal());
 helpBtn.addEventListener('click', () => openOnboarding());
 
 initLog();
+// случайный клик по кнопке в момент остановки скролла (палец на телефоне)
+// не должен нажимать вкладки, шапку и кнопки экранов
+installScrollClickGuard();
 
 // необработанные ошибки и rejection'ы — в журнал: иначе сбой обработчика
 // интерфейса не оставляет следов и не попадает в «Журнал» для отладки
@@ -57,6 +61,7 @@ initLogScreen(screens.log);
 const buttons = document.querySelectorAll<HTMLButtonElement>('nav button');
 let currentTab: TabName = 'day';
 let account: Account | null = null; // вошедший аккаунт (auth.js)
+let stopReminders: (() => void) | null = null; // остановка цикла напоминаний сессии
 
 function showTab(name: TabName): void {
   currentTab = name;
@@ -130,6 +135,17 @@ async function enterApp(acc: Account): Promise<void> {
   calmBtn.hidden = false;
   logTabBtn.hidden = !isAdmin(acc);
   refreshBell();
+  // цикл напоминаний живёт только во время сессии: без владельца выборка
+  // getDueReminders нефильтрованная, а после выхода напоминания не нужны
+  if (!stopReminders) {
+    stopReminders = startReminderLoop(
+      (now) => getDueReminders(now),
+      (task) => {
+        fireNotification(task);
+        updateTask(task.id, { dueAt: null }); // напоминание разовое
+      }
+    );
+  }
   // в пустой аккаунт — демо-день второй смены, в остальные — базовые дела
   // (убираются кнопкой на «Направлениях»); отказ сидирования не мешает входу
   try {
@@ -143,6 +159,8 @@ async function enterApp(acc: Account): Promise<void> {
 function showLogin(): void {
   account = null;
   setDataOwner(null);
+  stopReminders?.(); // при выходе уведомления глушим
+  stopReminders = null;
   authRoot.hidden = false;
   appEl.hidden = true;
   whoEl.hidden = true;
@@ -163,11 +181,15 @@ logoutBtn.addEventListener('click', () => {
 const authScreen = initAuthScreen(authRoot, enterApp);
 
 // сессия из прошлого запуска: валидный токен — сразу в приложение,
-// иначе экран входа (там же при первом запуске создаётся встроенный админ)
+// иначе экран входа (там же при первом запуске создаётся встроенный админ).
+// Сбой базы (апгрейд, открытие) не должен оставлять пустой экран
 restoreSession().then((acc) => {
   if (acc) enterApp(acc);
   else showLogin();
   log.info('app.start', { lang: getLang(), account: acc?.login ?? null });
+}).catch((err) => {
+  log.error('app.restoreFailed', { message: err instanceof Error ? err.message : String(err) });
+  showLogin();
 });
 
 // язык: кнопка показывает язык, на который переключит; смена перерисовывает экраны
@@ -253,13 +275,7 @@ bell.addEventListener('click', async () => {
   refreshBell();
 });
 
-startReminderLoop(
-  (now) => getDueReminders(now),
-  (task) => {
-    fireNotification(task);
-    updateTask(task.id, { dueAt: null }); // напоминание разовое
-  }
-);
+// сам цикл напоминаний стартует в enterApp и останавливается в showLogin
 
 // service worker — только в продакшн-сборке (на dev-сервере кэш мешал бы
 // свежему коду), в браузере по http/https; Electron работает с file://

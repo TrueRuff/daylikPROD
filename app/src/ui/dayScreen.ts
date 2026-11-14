@@ -23,7 +23,7 @@ import {
   normalizeTimeValue, bindTimeMasks, remindFieldsHtml, handleRemindClick, readRemindInput,
   sphereColor, repeatFieldsHtml, saveParsedTask, presetChipKeys,
 } from './dom.js';
-import { installClickGuard, DRAG_PX } from './gesture.js';
+import { installClickGuard, DRAG_PX, ARM_MOVE_PX, armOnLongPress } from './gesture.js';
 
 const ENERGY_KEY = 'daylik-energy';
 const WELCOME_KEY = 'daylik-welcome';
@@ -616,6 +616,7 @@ export function initDayScreen(root: HTMLElement): void {
   // таймлайн: тап-выбор, перенос карточки по времени, drag из колонки
 
   let gesture: Gesture | null = null;      // активный жест (карточка или дело из колонки)
+  let pressCancel: (() => void) | null = null; // отмена таймера long-press активного нажатия
 
   function dragBubble(text: string | null): void {
     let el = document.querySelector<HTMLElement>('.drag-time');
@@ -634,6 +635,79 @@ export function initDayScreen(root: HTMLElement): void {
   function rowAtPoint(x: number, y: number): HTMLElement | null {
     const el = document.elementFromPoint(x, y);
     return el?.closest<HTMLElement>('#tl-list .tl-row') || null;
+  }
+
+  const cancelPress = (): void => {
+    pressCancel?.();
+    pressCancel = null;
+  };
+
+  // автоскролл при drag'е: палец у края экрана прокручивает ближайший
+  // контейнер (ленту дня, иначе страницу) — дело можно донести до любой строки
+  const AUTO_SCROLL_EDGE = 56;
+  const AUTO_SCROLL_SPEED = 14; // px за кадр у самого края
+  let autoScrollRaf = 0;
+  let autoPoint = { x: 0, y: 0 };
+
+  function scrollByAt(dy: number): number {
+    const r = scrollEl.getBoundingClientRect();
+    const overList = autoPoint.y >= r.top && autoPoint.y <= r.bottom
+      && autoPoint.x >= r.left && autoPoint.x <= r.right;
+    const el = overList && scrollEl.scrollHeight > scrollEl.clientHeight
+      ? scrollEl
+      : document.scrollingElement;
+    if (!el) return 0;
+    const before = el.scrollTop;
+    el.scrollTop = before + dy;
+    return el.scrollTop - before;
+  }
+
+  function updateMoveDrag(g: MoveGesture, x: number, y: number): void {
+    const delta = Math.round((y - g.startY) / DRAG_PX_PER_MIN);
+    const ns = Math.max(0, Math.min(MINUTES - g.durMin, Math.round((g.startMin + delta) / 5) * 5));
+    g.newStart = ns;
+    g.card.style.transform = `translateY(${(ns - g.startMin) * DRAG_PX_PER_MIN}px)`;
+    g.card.style.opacity = '.85';
+    // курсор над колонкой дел — дело вернётся из расписания в дела
+    const overSide = Boolean(document.elementFromPoint(x, y)?.closest('.side'));
+    g.toSide = overSide;
+    sideEl.classList.toggle('drop-col', overSide);
+    dragBubble(overSide ? t('day.backToTasks') : `${minutesToTime(ns)}–${minutesToTime(ns + g.durMin)}`);
+  }
+
+  function updateSideDrag(g: SideGesture, x: number, y: number): void {
+    g.ghost!.style.left = `${x}px`;
+    g.ghost!.style.top = `${y}px`;
+    g.dropRow = rowAtPoint(x, y);
+    document.querySelectorAll('#tl-list .tl-row').forEach((r) => r.classList.toggle('drop-row', r === g.dropRow));
+  }
+
+  function autoScrollStep(): void {
+    const g = gesture;
+    if (!g || !g.moved) {
+      autoScrollRaf = 0;
+      return;
+    }
+    const vh = window.innerHeight;
+    let dy = 0;
+    if (autoPoint.y < AUTO_SCROLL_EDGE) {
+      dy = -Math.round(AUTO_SCROLL_SPEED * (1 - autoPoint.y / AUTO_SCROLL_EDGE) + 2);
+    } else if (autoPoint.y > vh - AUTO_SCROLL_EDGE) {
+      dy = Math.round(AUTO_SCROLL_SPEED * (1 - (vh - autoPoint.y) / AUTO_SCROLL_EDGE) + 2);
+    }
+    const scrolled = dy ? scrollByAt(dy) : 0;
+    if (g.type === 'move') {
+      // лента уехала под палец — карточка следует за ним (1 px = 1 мин)
+      if (scrolled) g.startY -= scrolled;
+      updateMoveDrag(g, autoPoint.x, autoPoint.y);
+    } else if (scrolled) {
+      updateSideDrag(g, autoPoint.x, autoPoint.y);
+    }
+    autoScrollRaf = requestAnimationFrame(autoScrollStep);
+  }
+
+  function startAutoScroll(): void {
+    if (!autoScrollRaf) autoScrollRaf = requestAnimationFrame(autoScrollStep);
   }
 
   root.addEventListener('pointerdown', (e) => {
@@ -658,11 +732,40 @@ export function initDayScreen(root: HTMLElement): void {
     } catch {
       // события всё равно всплывут до root
     }
+    // пальцем тащим только после long-press: раньше — это листание (pan-y)
+    if (e.pointerType === 'touch') {
+      const g = gesture;
+      pressCancel = armOnLongPress(() => {
+        pressCancel = null;
+        if (gesture !== g || g.moved) return;
+        g.moved = true;
+        if (g.type === 'side' && !g.ghost) {
+          const ghost = document.createElement('div');
+          ghost.className = 'drag-ghost';
+          ghost.textContent = g.task.title;
+          ghost.style.left = `${g.startX}px`;
+          ghost.style.top = `${g.startY}px`;
+          document.body.appendChild(ghost);
+          g.ghost = ghost;
+        } else if (g.type === 'move') {
+          g.card.style.opacity = '.85';
+        }
+        startAutoScroll();
+      });
+    }
   });
 
   root.addEventListener('pointermove', (e) => {
     if (!gesture) return;
     const g = gesture;
+    // touch до long-press: сдвиг раньше таймера — листание, жест отменяем
+    if (e.pointerType === 'touch' && !g.moved) {
+      if (Math.hypot(e.clientX - g.startX, e.clientY - g.startY) > ARM_MOVE_PX) {
+        cancelPress();
+        gesture = null;
+      }
+      return;
+    }
     if (!g.moved && Math.hypot(e.clientX - g.startX, e.clientY - g.startY) < DRAG_PX) return;
     if (!g.moved) {
       g.moved = true;
@@ -674,29 +777,17 @@ export function initDayScreen(root: HTMLElement): void {
         g.ghost = ghost;
       }
     }
-    if (g.type === 'move') {
-      const delta = Math.round((e.clientY - g.startY) / DRAG_PX_PER_MIN);
-      const ns = Math.max(0, Math.min(MINUTES - g.durMin, Math.round((g.startMin + delta) / 5) * 5));
-      g.newStart = ns;
-      g.card.style.transform = `translateY(${(ns - g.startMin) * DRAG_PX_PER_MIN}px)`;
-      g.card.style.opacity = '.85';
-      // курсор над колонкой дел — дело вернётся из расписания в дела
-      const overSide = Boolean(document.elementFromPoint(e.clientX, e.clientY)?.closest('.side'));
-      g.toSide = overSide;
-      sideEl.classList.toggle('drop-col', overSide);
-      dragBubble(overSide ? t('day.backToTasks') : `${minutesToTime(ns)}–${minutesToTime(ns + g.durMin)}`);
-    } else {
-      g.ghost!.style.left = `${e.clientX}px`;
-      g.ghost!.style.top = `${e.clientY}px`;
-      g.dropRow = rowAtPoint(e.clientX, e.clientY);
-      document.querySelectorAll('#tl-list .tl-row').forEach((r) => r.classList.toggle('drop-row', r === g.dropRow));
-    }
+    autoPoint = { x: e.clientX, y: e.clientY };
+    if (g.type === 'move') updateMoveDrag(g, e.clientX, e.clientY);
+    else updateSideDrag(g, e.clientX, e.clientY);
+    startAutoScroll();
   });
 
   root.addEventListener('pointerup', async (e) => {
     if (!gesture) return;
     const g = gesture;
     gesture = null;
+    cancelPress();
     if (!g.moved) return; // клик без движения — обычные обработчики
     // дальше жест: клик после отпускания погасит installClickGuard
 
@@ -733,6 +824,7 @@ export function initDayScreen(root: HTMLElement): void {
   });
 
   root.addEventListener('pointercancel', () => {
+    cancelPress();
     if (!gesture) return;
     const g = gesture;
     if (g.type === 'move') {
@@ -745,6 +837,15 @@ export function initDayScreen(root: HTMLElement): void {
     document.querySelectorAll('#tl-list .drop-row').forEach((r) => r.classList.remove('drop-row'));
     gesture = null;
   });
+
+  // удержание на touch не должно открывать контекстное меню, а после
+  // long-press жест наш — скролл на время перетаскивания глушим
+  root.addEventListener('contextmenu', (e) => {
+    if (pressCancel || gesture?.moved) e.preventDefault();
+  });
+  root.addEventListener('touchmove', (e) => {
+    if (gesture?.moved) e.preventDefault();
+  }, { passive: false });
 
   scrollEl.addEventListener('click', async (e) => {
     const target = e.target as HTMLElement;

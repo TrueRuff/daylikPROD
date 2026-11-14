@@ -74,6 +74,55 @@ describe('двоичный формат .daylik', () => {
     bytes[10] = 0xff; // раздуем длину первой строки до миллиардов байтов
     expect(parseBinary(bytes.buffer)).toBeNull();
   });
+
+  it('поля v2 (doneAt, demo, owner) переживают round-trip', () => {
+    const data = fixture();
+    const t = data.tasks[0] as Record<string, unknown>;
+    t.doneAt = 1729900500000;
+    t.demo = true;
+    t.owner = 'админ';
+    (data.spheres[0] as Record<string, unknown>).owner = 'админ';
+    (data.practices[0] as Record<string, unknown>).owner = 'админ';
+    const restored = normalizeImport(parseBinary(serializeBinary(data).buffer));
+    expect(restored.tasks[0].doneAt).toBe(1729900500000);
+    expect(restored.tasks[0].demo).toBe(true);
+    expect(restored.tasks[0].owner).toBe('админ');
+    expect(restored.spheres[0].owner).toBe('админ');
+    expect(restored.practices[0].owner).toBe('админ');
+  });
+
+  it('файл старого формата v1 читается — новые поля не теряют файл', () => {
+    // вручную собираем минимальный v1-файл: MAGIC, версия 1, одно дело,
+    // пустые сферы и практики (поля по схеме v1, без doneAt/demo/owner)
+    const enc = new TextEncoder();
+    const parts: number[] = [];
+    const u32 = (v: number) => parts.push(v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255);
+    const f64 = (v: number) => {
+      const b = new Uint8Array(8);
+      new DataView(b.buffer).setFloat64(0, v, true);
+      parts.push(...b);
+    };
+    const str = (s: string) => {
+      const b = enc.encode(s);
+      u32(b.length);
+      parts.push(...b);
+    };
+    const none = () => parts.push(0); // nullable: отсутствует
+    for (const ch of 'DAYL') parts.push(ch.charCodeAt(0));
+    parts.push(1); // версия v1
+    u32(0); // spheres: 0
+    u32(1); // tasks: 1
+    str('t1'); none(); str('текст'); str('Дело'); str('Н'); u32(30); str('todo');
+    none(); none(); none(); none(); // scheduledDate, scheduledStart, dueAt, repeatRule
+    str(''); f64(1729900000000); str('rules'); // notes, createdAt, source
+    u32(0); // practices: 0
+    const restored = normalizeImport(parseBinary(new Uint8Array(parts).buffer)!);
+    expect(restored.tasks).toHaveLength(1);
+    expect(restored.tasks[0].title).toBe('Дело');
+    expect(restored.tasks[0].doneAt).toBeNull();
+    expect(restored.tasks[0].demo).toBe(false);
+    expect(restored.tasks[0].owner).toBeNull();
+  });
 });
 
 describe('normalizeImport — проверка импортируемых данных', () => {

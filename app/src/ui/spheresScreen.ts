@@ -17,7 +17,7 @@ import { doneInLastDays } from '../core/analytics.js';
 import { minutesToTime, timeToMinutes, formatDays } from '../core/schedule.js';
 import { t } from '../core/i18n.js';
 import { escapeHtml, downloadFile, daysCheckboxes, groupOptions, timeRangeFields, normalizeTimeValue, saveParsedTask } from './dom.js';
-import { installClickGuard, DRAG_PX } from './gesture.js';
+import { installClickGuard, DRAG_PX, ARM_MOVE_PX, armOnLongPress } from './gesture.js';
 import { getDataOwner } from '../core/storage.js';
 
 const EXAMPLES: { name: string; group: SphereGroup }[] = [
@@ -58,7 +58,23 @@ function blockFormHtml(): string {
 
 export function initSpheresScreen(root: HTMLElement): void {
   let drag: DragState | null = null; // перетаскивание карточки между колонками
+  let pressCancel: (() => void) | null = null; // отмена таймера long-press активного нажатия
   let ioPending: string | null = null; // сообщение, которое должно пережить перерисовку
+
+  const cancelPress = (): void => {
+    pressCancel?.();
+    pressCancel = null;
+  };
+
+  // вид перетаскивания: призрак-копия под пальцем и полупрозрачный источник
+  function startDragVisual(d: DragState): void {
+    d.moved = true;
+    const ghost = d.el.cloneNode(true) as HTMLElement;
+    ghost.className = 'drag-ghost';
+    document.body.appendChild(ghost);
+    d.ghost = ghost;
+    d.el.classList.add('drag-src');
+  }
 
   installClickGuard(root);
 
@@ -248,19 +264,29 @@ export function initSpheresScreen(root: HTMLElement): void {
     } catch {
       // без захвата pointermove всплывает до root
     }
+    // пальцем тащим только после long-press: раньше — это листание (pan-y)
+    if (e.pointerType === 'touch') {
+      const d = drag;
+      pressCancel = armOnLongPress(() => {
+        pressCancel = null;
+        if (drag !== d || d.moved) return;
+        startDragVisual(d);
+      });
+    }
   });
 
   root.addEventListener('pointermove', (e) => {
     if (!drag) return;
-    if (!drag.moved && Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < DRAG_THRESHOLD) return;
-    if (!drag.moved) {
-      drag.moved = true;
-      const ghost = drag.el.cloneNode(true) as HTMLElement;
-      ghost.className = 'drag-ghost';
-      document.body.appendChild(ghost);
-      drag.ghost = ghost;
-      drag.el.classList.add('drag-src');
+    // touch до long-press: сдвиг раньше таймера — листание, жест отменяем
+    if (e.pointerType === 'touch' && !drag.moved) {
+      if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) > ARM_MOVE_PX) {
+        cancelPress();
+        drag = null;
+      }
+      return;
     }
+    if (!drag.moved && Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < DRAG_THRESHOLD) return;
+    if (!drag.moved) startDragVisual(drag);
     drag.ghost!.style.left = `${e.clientX}px`;
     drag.ghost!.style.top = `${e.clientY}px`;
 
@@ -275,6 +301,7 @@ export function initSpheresScreen(root: HTMLElement): void {
   });
 
   async function finishDrag(cancelled: boolean): Promise<void> {
+    cancelPress();
     if (!drag) return;
     const { moved, id, dropG, ghost, el } = drag;
     ghost?.remove();
@@ -296,6 +323,15 @@ export function initSpheresScreen(root: HTMLElement): void {
 
   root.addEventListener('pointerup', () => finishDrag(false));
   root.addEventListener('pointercancel', () => finishDrag(true));
+
+  // удержание на touch не должно открывать контекстное меню, после
+  // long-press жест наш — скролл на время перетаскивания глушим
+  root.addEventListener('contextmenu', (e) => {
+    if (pressCancel || drag?.moved) e.preventDefault();
+  });
+  root.addEventListener('touchmove', (e) => {
+    if (drag?.moved) e.preventDefault();
+  }, { passive: false });
 
   root.addEventListener('click', async (e) => {
     const target = e.target as HTMLElement;

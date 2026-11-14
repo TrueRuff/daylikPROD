@@ -7,7 +7,7 @@ import { isRepeatRule } from './recurring.js';
 import type { SphereGroup, SphereProps, TaskProps, PracticeProps } from './models.js';
 
 const FORMAT = 'daylik';
-const FORMAT_VERSION = 1;
+const FORMAT_VERSION = 2;
 const MAGIC = 'DAYL'; // сигнатура двоичного файла
 
 export interface ExportData {
@@ -29,8 +29,11 @@ export interface ParsedJson {
 // str / u32 / f64, суффикс ? — nullable, u32[] — массив чисел
 type FieldType = 'str' | 'u32' | 'f64' | 'u32[]' | 'str?' | 'u32?' | 'f64?';
 type SchemaField = [name: string, type: FieldType];
+type Schemas = Record<'spheres' | 'tasks' | 'practices', SchemaField[]>;
 
-const SCHEMAS: Record<'spheres' | 'tasks' | 'practices', SchemaField[]> = {
+// схема v1: бэкапы первых версий без doneAt/demo/owner — читаются, но
+// не пишутся; v2 добавила их, чтобы восстановление не теряло данные
+const SCHEMAS_V1: Schemas = {
   spheres: [
     ['id', 'str'], ['name', 'str'], ['group', 'str'],
     ['brief', 'str'], ['details', 'str'], ['createdAt', 'f64'],
@@ -45,6 +48,13 @@ const SCHEMAS: Record<'spheres' | 'tasks' | 'practices', SchemaField[]> = {
     ['id', 'str'], ['sphereId', 'str?'], ['title', 'str'],
     ['days', 'u32[]'], ['start', 'u32'], ['end', 'u32'],
   ],
+};
+
+// demo — булев флаг, в схеме как u32? (0/1); normalizeImport приводит к bool
+const SCHEMAS: Schemas = {
+  spheres: [...SCHEMAS_V1.spheres, ['owner', 'str?']],
+  tasks: [...SCHEMAS_V1.tasks, ['demo', 'u32?'], ['owner', 'str?'], ['doneAt', 'f64?']],
+  practices: [...SCHEMAS_V1.practices, ['owner', 'str?']],
 };
 
 export function serializeJson(data: ExportData): string {
@@ -216,10 +226,12 @@ export function parseBinary(buffer: ArrayBuffer): ParsedBinary | null {
     for (const ch of MAGIC) {
       if (r.u8() !== ch.charCodeAt(0)) return null;
     }
-    if (r.u8() !== FORMAT_VERSION) return null;
+    const version = r.u8();
+    const schemas = version === FORMAT_VERSION ? SCHEMAS : version === 1 ? SCHEMAS_V1 : null;
+    if (!schemas) return null;
 
     const data: Record<string, unknown> = {};
-    for (const [key, fields] of Object.entries(SCHEMAS) as [string, SchemaField[]][]) {
+    for (const [key, fields] of Object.entries(schemas) as [string, SchemaField[]][]) {
       const count = r.u32();
       const list: Record<string, unknown>[] = [];
       for (let i = 0; i < count; i++) {
@@ -273,6 +285,7 @@ export function normalizeImport(obj: unknown): ExportData {
     .map((s) => {
       const sphere = new Sphere({ ...s, id: safeId(s.id) } as unknown as SphereProps);
       sphere.group = safeGroup(sphere.group);
+      sphere.demo = Boolean(sphere.demo); // в бинарной схеме demo — 0/1
       return sphere;
     }));
   const sphereIds = new Set(spheres.map((s) => s.id));
@@ -292,6 +305,8 @@ export function normalizeImport(obj: unknown): ExportData {
         : null;
       task.scheduledStart = task.scheduledStart == null ? null : safeInt(task.scheduledStart, null, 0, 1439);
       task.dueAt = task.dueAt == null || !Number.isFinite(Number(task.dueAt)) ? null : Number(task.dueAt);
+      task.doneAt = task.doneAt == null || !Number.isFinite(Number(task.doneAt)) ? null : Number(task.doneAt);
+      task.demo = Boolean(task.demo); // в бинарной схеме demo — 0/1
       return task;
     }));
 

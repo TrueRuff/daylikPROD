@@ -133,6 +133,16 @@ describe('completeTask — повторяющиеся дела', () => {
     const next = await completeTask(t);
     expect(next.scheduledDate).toBe('2026-10-27');
   });
+
+  it('двойное завершение идемпотентно — дубликат не создаётся', async () => {
+    const t = task('r1', { repeatRule: 'daily', scheduledDate: '2026-10-24', scheduledStart: 600 });
+    await saveTask(t);
+    const next = await completeTask(t);
+    const second = await completeTask(t); // повторный клик «✓»
+    expect(second).toBeNull();
+    expect((await getTasks({ status: 'todo' })).map((x) => x.id)).toEqual([next!.id]);
+    expect((await getTasks({ status: 'done' })).map((x) => x.id)).toEqual(['r1']);
+  });
 });
 
 describe('журнал и импорт', () => {
