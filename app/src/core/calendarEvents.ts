@@ -4,13 +4,13 @@
 
 import { practiceAppliesOn, addDays, weekdayOf } from './schedule.js';
 import { practicesToBlocks } from './dayPlan.js';
-import type { PlanBlock, Practice, SphereGroup, Task } from './models.js';
+import type { Practice, SphereGroup, Task } from './models.js';
 
 // цвета как в дизайн-системе (styles.css): Н терракота, Ж янтарь, П синий
 export const GROUP_COLORS: Record<SphereGroup, string> = { 'Н': '#a94e35', 'Ж': '#8a6410', 'П': '#40628a' };
 export const ROUTINE_COLOR = '#6f7581';
 
-export type CalEventKind = 'routine' | 'task';
+type CalEventKind = 'routine' | 'task';
 
 // событие в формате, совместимом с FullCalendar
 export interface CalEvent {

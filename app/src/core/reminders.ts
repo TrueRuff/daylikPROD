@@ -5,7 +5,7 @@ import { log } from './log.js';
 import { t } from './i18n.js';
 import type { Task } from './models.js';
 
-export type GetDueReminders = (now: number) => Promise<Task[]>;
+type GetDueReminders = (now: number) => Promise<Task[]>;
 
 // возвращает функцию остановки цикла
 export function startReminderLoop(

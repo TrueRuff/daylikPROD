@@ -5,8 +5,8 @@ export type SphereGroup = 'Н' | 'Ж' | 'П'; // Необходимо / Жела
 
 export const GROUPS: readonly SphereGroup[] = ['Н', 'Ж', 'П'];
 
-export type TaskStatus = 'todo' | 'done';
-export type TaskSource = 'rules' | 'llm' | 'manual';
+type TaskStatus = 'todo' | 'done';
+type TaskSource = 'rules' | 'llm' | 'manual';
 
 export interface SphereProps {
   id: string;
@@ -143,7 +143,7 @@ export class Practice {
   }
 }
 
-export type PlanBlockKind = 'routine' | 'task' | 'free';
+type PlanBlockKind = 'routine' | 'task' | 'free';
 
 // блок таймлайна дня
 export class PlanBlock {

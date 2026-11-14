@@ -56,35 +56,45 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function categorizeWithLlm(rawText: string): Promise<CategorizeResult | null> {
+interface LlmReply {
+  content: string;
+  model?: string;
+}
+
+// общий путь запроса для всех задач: ключ → запрос → retry на 429/5xx → текст ответа
+async function askLlm(userText: string, opts: { systemPrompt?: string; retry?: boolean; tag: string }): Promise<LlmReply | null> {
   const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
   if (!apiKey) return null;
-
   const model = import.meta.env.VITE_LLM_MODEL || DEFAULT_MODEL;
-  log.debug('llm.request', { model, textLength: rawText.length });
+  log.debug('llm.' + opts.tag + '.request', { model });
 
-  let response = await sendRequest(apiKey, model, rawText);
-  if (response && RETRYABLE_STATUS.has(response.status)) {
+  let response = await sendRequest(apiKey, model, userText, opts.systemPrompt);
+  if (opts.retry && response && RETRYABLE_STATUS.has(response.status)) {
     log.warn('llm.retryable', { status: response.status });
     await delay(RETRY_DELAY_MS);
-    response = await sendRequest(apiKey, model, rawText);
+    response = await sendRequest(apiKey, model, userText, opts.systemPrompt);
   }
   if (!response || !response.ok) {
-    log.warn('llm.failed', { status: response ? response.status : 'network' });
+    log.warn('llm.' + opts.tag + '.failed', { status: response ? response.status : 'network' });
     return null;
   }
-
   const data = await response.json().catch(() => null) as LlmResponse | null;
   const content = data?.choices?.[0]?.message?.content;
   if (typeof content !== 'string') {
-    log.warn('llm.badResponse', { hasContent: false });
+    log.warn('llm.' + opts.tag + '.badResponse');
     return null;
   }
+  return { content, model: data?.model };
+}
 
-  const result = parseLlmAnswer(content);
-  log[result ? 'info' : 'warn'](result ? 'llm.parsed' : 'llm.unparsed', {
-    model: data?.model,
-    chars: content.length,
+export async function categorizeWithLlm(rawText: string): Promise<CategorizeResult | null> {
+  const reply = await askLlm(rawText, { retry: true, tag: 'categorize' });
+  if (!reply) return null;
+
+  const result = parseLlmAnswer(reply.content);
+  log[result ? 'info' : 'warn']('llm.' + (result ? 'parsed' : 'unparsed'), {
+    model: reply.model,
+    chars: reply.content.length,
   });
   return result;
 }
@@ -142,22 +152,11 @@ const BREAKDOWN_PROMPT = `Разбей дело на 3–6 маленьких к
 // разбиение большого дела на шаги (идея из goblin.tools). null — ключа нет,
 // сеть недоступна или модель ответила не массивом
 export async function breakdownWithLlm(title: string): Promise<string[] | null> {
-  const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
-  if (!apiKey) return null;
-  const model = import.meta.env.VITE_LLM_MODEL || DEFAULT_MODEL;
-  log.debug('llm.breakdown.request', { model });
+  const reply = await askLlm(title, { systemPrompt: BREAKDOWN_PROMPT, retry: true, tag: 'breakdown' });
+  if (!reply) return null;
 
-  const response = await sendRequest(apiKey, model, title, BREAKDOWN_PROMPT);
-  if (!response || !response.ok) {
-    log.warn('llm.breakdown.failed', { status: response ? response.status : 'network' });
-    return null;
-  }
-  const data = await response.json().catch(() => null) as LlmResponse | null;
-  const content = data?.choices?.[0]?.message?.content;
-  if (typeof content !== 'string') return null;
-
-  const steps = parseSteps(content);
-  log[steps ? 'info' : 'warn']('llm.breakdown.' + (steps ? 'ok' : 'unparsed'), { chars: content.length });
+  const steps = parseSteps(reply.content);
+  log[steps ? 'info' : 'warn']('llm.breakdown.' + (steps ? 'ok' : 'unparsed'), { chars: reply.content.length });
   return steps;
 }
 

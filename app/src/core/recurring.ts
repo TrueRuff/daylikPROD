@@ -20,7 +20,7 @@ export function isRepeatRule(v: unknown): boolean {
 }
 
 // патч для новой задачи-вхождения после завершения текущей
-export interface OccurrencePatch {
+interface OccurrencePatch {
   scheduledDate: string | null;
   scheduledStart: number | null;
 }

@@ -21,7 +21,7 @@ import { t, getLang } from '../core/i18n.js';
 import {
   escapeHtml, daysCheckboxes, groupOptions, timeRangeFields, timeInput,
   normalizeTimeValue, bindTimeMasks, remindFieldsHtml, handleRemindClick, readRemindInput,
-  sphereColor, repeatFieldsHtml, saveParsedTask, presetChipKeys,
+  sphereColor, repeatFieldsHtml, saveParsedTask,
 } from './dom.js';
 import { installClickGuard, DRAG_PX, ARM_MOVE_PX, armOnLongPress } from './gesture.js';
 
@@ -343,9 +343,6 @@ export function initDayScreen(root: HTMLElement): void {
       </details>` : '')
         : `<div class="col-empty">
             <p class="muted">${t('day.startOne')}</p>
-            <div class="chips">
-              ${presetChipKeys().map((key) => `<button type="button" class="grp chip" data-empty-preset="${key}">${t(key)}</button>`).join('')}
-            </div>
           </div>`}
       ${done.length ? `
       <div class="done-list">
@@ -603,6 +600,8 @@ export function initDayScreen(root: HTMLElement): void {
       </div>`;
   }
 
+  // автокладка: строит день алгоритмом (buildDay) и ставит столько дел,
+  // сколько допускает текущий уровень сил; порядок — по энергии
   async function autoPlace(): Promise<void> {
     const { date, routines, scheduled, unscheduled } = state!;
     const occupancy: Occupancy[] = [...routines, ...scheduled.map(occOf)];
@@ -678,11 +677,52 @@ export function initDayScreen(root: HTMLElement): void {
     dragBubble(overSide ? t('day.backToTasks') : `${minutesToTime(ns)}–${minutesToTime(ns + g.durMin)}`);
   }
 
+  // время посадки дела из колонки: минута строки-цели (свободное окно или
+  // блок), шаг 5 минут, конец дня не выходим — единое место для превью и броска
+  function sideDropStart(row: HTMLElement | null, durMin: number): number | null {
+    if (!row) return null;
+    const min = Number(row.dataset.min ?? row.dataset.start);
+    return Number.isNaN(min) ? null : Math.min(Math.round(min / 5) * 5, MINUTES - durMin);
+  }
+
+  let dropPreview: HTMLElement | null = null;
+
+  function hideDropPreview(): void {
+    dropPreview?.remove();
+    dropPreview = null;
+  }
+
+  // призрак «куда встанет дело»: полупрозрачная карточка с именем и временем
+  // поверх строки-цели (как в Google Calendar / Sunsama) — без цели его нет
+  function updateDropPreview(g: SideGesture): void {
+    const start = sideDropStart(g.dropRow ?? null, g.task.durationMin);
+    if (start === null || !g.dropRow) {
+      hideDropPreview();
+      return;
+    }
+    if (!dropPreview) {
+      dropPreview = document.createElement('div');
+      dropPreview.className = 'tl-drop-preview';
+      document.body.appendChild(dropPreview);
+    }
+    const color = (g.task.sphereId && state!.sphereColors[g.task.sphereId]) || GROUP_COLORS[g.task.group] || 'var(--accent)';
+    dropPreview.style.background = color;
+    dropPreview.innerHTML = `<span class="tl-title">${escapeHtml(g.task.title)}</span>
+      <span class="tl-dur">${minutesToTime(start)}–${minutesToTime(start + g.task.durationMin)}</span>`;
+    const target = g.dropRow.querySelector<HTMLElement>('.tl-card, .tl-free') ?? g.dropRow;
+    const r = target.getBoundingClientRect();
+    dropPreview.style.left = `${r.left}px`;
+    dropPreview.style.top = `${r.top}px`;
+    dropPreview.style.width = `${r.width}px`;
+    dropPreview.style.height = `${r.height}px`;
+  }
+
   function updateSideDrag(g: SideGesture, x: number, y: number): void {
     g.ghost!.style.left = `${x}px`;
     g.ghost!.style.top = `${y}px`;
     g.dropRow = rowAtPoint(x, y);
     document.querySelectorAll('#tl-list .tl-row').forEach((r) => r.classList.toggle('drop-row', r === g.dropRow));
+    updateDropPreview(g);
   }
 
   function autoScrollStep(): void {
@@ -753,7 +793,8 @@ export function initDayScreen(root: HTMLElement): void {
         } else if (g.type === 'move') {
           g.card.style.opacity = '.85';
         }
-        startAutoScroll();
+        // автоскролл не стартуем: autoPoint ещё не знает, где палец
+        // (стартует при первом pointermove — иначе страница рвалась к краю)
       });
     }
   });
@@ -811,15 +852,15 @@ export function initDayScreen(root: HTMLElement): void {
       return;
     }
 
-    // дело из колонки бросили на строку дня — ставим на её время
+    // дело из колонки бросили на строку дня — ставим на время превью
     g.ghost?.remove();
+    hideDropPreview();
     document.querySelectorAll('#tl-list .drop-row').forEach((r) => r.classList.remove('drop-row'));
-    const row = rowAtPoint(e.clientX, e.clientY);
-    const min = Number(row?.dataset.min ?? row?.dataset.start);
-    if (row && !Number.isNaN(min)) {
+    const start = sideDropStart(rowAtPoint(e.clientX, e.clientY), g.task.durationMin);
+    if (start !== null) {
       await updateTask(g.id, {
         scheduledDate: state!.date,
-        scheduledStart: Math.min(Math.round(min / 5) * 5, MINUTES - g.task.durationMin),
+        scheduledStart: start,
       });
       whatNow = null;
     }
@@ -828,6 +869,7 @@ export function initDayScreen(root: HTMLElement): void {
 
   root.addEventListener('pointercancel', () => {
     cancelPress();
+    hideDropPreview();
     if (!gesture) return;
     const g = gesture;
     if (g.type === 'move') {
@@ -1046,17 +1088,6 @@ export function initDayScreen(root: HTMLElement): void {
 
     if (target.closest('#quick-save')) {
       await quickAdd();
-      return;
-    }
-
-    // пример в пустой колонке: подставить текст в быстрый ввод и создать
-    const emptyPreset = target.closest<HTMLElement>('[data-empty-preset]');
-    if (emptyPreset) {
-      const input = root.querySelector<HTMLInputElement>('#quick-add');
-      if (input) {
-        input.value = t(emptyPreset.dataset.emptyPreset!);
-        await quickAdd();
-      }
       return;
     }
 

@@ -33,7 +33,7 @@ function fold(line: string): string {
   return parts.join('\r\n ');
 }
 
-export interface IcsOptions {
+interface IcsOptions {
   stamp?: string; // строка DTSTAMP 'YYYYMMDDTHHMMSS'
 }
 

@@ -23,7 +23,7 @@ export interface FreeWindow {
   end: number;
 }
 
-export interface DayPlan {
+interface DayPlan {
   date: string;
   blocks: PlanBlock[];
   postponed: string[];
@@ -146,7 +146,7 @@ export function findFreeWindow(blocks: Occupancy[], durationMin: number): [numbe
   return w ? [w.start, w.start + durationMin] : null;
 }
 
-export interface BuildDayOptions {
+interface BuildDayOptions {
   sort?: (tasks: Task[]) => Task[];
 }
 

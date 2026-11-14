@@ -5,7 +5,7 @@ import { login, register, ensureBuiltinAdmin } from '../core/auth.js';
 import { t, onChange } from '../core/i18n.js';
 import type { Account } from '../core/storage.js';
 
-export interface AuthScreen {
+interface AuthScreen {
   show(): void;
 }
 

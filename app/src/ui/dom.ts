@@ -42,19 +42,6 @@ export function sphereColor(id: unknown): string {
   return `hsl(${SPHERE_HUES[h]}, 55%, 52%)`;
 }
 
-// примеры дел: пул больше показываемого, четвёрка меняется со сменой суток —
-// приложение не приедается (жалоба «бросают через неделю»)
-const PRESET_KEYS = [
-  'input.preset1', 'input.preset2', 'input.preset3', 'input.preset4',
-  'input.preset5', 'input.preset6', 'input.preset7', 'input.preset8',
-];
-
-export function presetChipKeys(): string[] {
-  const day = Math.floor(Date.now() / 86400000);
-  const offset = day % PRESET_KEYS.length;
-  return [0, 1, 2, 3].map((i) => PRESET_KEYS[(offset + i) % PRESET_KEYS.length]);
-}
-
 // поле времени: 4 цифры (две в часы, две в минуты), двоеточие появляется само
 export function timeInput(cls: string, value = '', optional = false): string {
   return `<input class="js-time ${cls}" type="text" inputmode="numeric" maxlength="5"
@@ -98,7 +85,7 @@ export function timeRangeFields(start = '09:00', end = '10:00'): string {
     </div>`;
 }
 
-export interface RemindFieldsOptions {
+interface RemindFieldsOptions {
   date?: string;
   time?: string;
   open?: boolean;

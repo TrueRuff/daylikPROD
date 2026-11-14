@@ -246,7 +246,7 @@ export function initSpheresScreen(root: HTMLElement): void {
     }));
     if (!ok) return;
 
-    await importAll(data);
+    await importAll(clean); // уже нормализовано — второй проход идемпотентен
     await renderList();
     document.dispatchEvent(new CustomEvent('tab-shown', { detail: 'day' }));
     ioMessage(t('data.imported'));

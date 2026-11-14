@@ -137,7 +137,7 @@ export async function getAllSpheres(): Promise<Sphere[]> {
   return rows.map((r) => new Sphere(r));
 }
 
-export interface TaskFilter {
+interface TaskFilter {
   status?: string | null;
   group?: string | null;
 }
@@ -268,11 +268,15 @@ export async function __clearForTests(): Promise<void> {
 }
 
 // журнал: записи пишутся в таблицу logs, хвост длиннее LOG_CAP подрезается
+// (проверка объёма раз в 50 записей, чтобы каждый лог не стоил лишнего запроса)
 const LOG_CAP = 1000;
 
 export function initLog(): void {
+  let written = 0;
   setSink(async (entry: LogEntry) => {
     await db.logs.add(entry);
+    written++;
+    if (written % 50 !== 0) return;
     const count = await db.logs.count();
     if (count > LOG_CAP) {
       const excess = await db.logs.orderBy('id').limit(count - LOG_CAP).primaryKeys();
@@ -282,7 +286,7 @@ export function initLog(): void {
 }
 
 // последние записи журнала из базы (переживают перезапуск), сначала новые
-export interface LogsFilter {
+interface LogsFilter {
   limit?: number;
   minLevel?: LogLevel | null;
 }

@@ -6,7 +6,7 @@ import { categorizeWithLlm } from '../ai/llmClient.js';
 import { log } from './log.js';
 import type { SphereGroup } from './models.js';
 
-export type CategorizeKind = 'task' | 'routine' | 'sphere';
+type CategorizeKind = 'task' | 'routine' | 'sphere';
 
 export interface CategorizeResult {
   kind: CategorizeKind;
@@ -129,6 +129,6 @@ export async function categorize(rawText: string): Promise<CategorizeResult> {
   } catch (err) {
     log.error('categorize.llmThrew', { message: err instanceof Error ? err.message : String(err) });
   }
-  log.info('categorize.fallback', { rawText });
+  log.info('categorize.fallback'); // статус уже записал llmClient, текст не дублируем
   return { ...rulesResult, llmFailed: true };
 }

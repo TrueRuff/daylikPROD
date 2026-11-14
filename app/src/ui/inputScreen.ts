@@ -8,7 +8,7 @@ import { Task, Sphere } from '../core/models.js';
 import type { SphereGroup } from '../core/models.js';
 import { saveTask, saveSphere, getAllSpheres } from '../core/storage.js';
 import { t, onChange } from '../core/i18n.js';
-import { escapeHtml, bindTimeMasks, remindFieldsHtml, handleRemindClick, readRemindInput, sphereColor, repeatFieldsHtml, presetChipKeys } from './dom.js';
+import { escapeHtml, bindTimeMasks, remindFieldsHtml, handleRemindClick, readRemindInput, sphereColor, repeatFieldsHtml } from './dom.js';
 
 type AddKind = 'task' | 'ongoing' | 'sphere';
 
@@ -138,10 +138,6 @@ function render(): void {
           <input id="raw" placeholder="${t('input.placeholder')}" value="${escapeHtml(state?.rawText || '')}">
           <button id="parse">${t('input.parse')}</button>
         </div>
-        ${state || savedMsg ? '' : `
-        <div class="chips">
-          ${presetChipKeys().map((key) => `<button type="button" class="grp chip" data-preset="${key}">${t(key)}</button>`).join('')}
-        </div>`}
         <div id="confirm">${confirmHtml}</div>
       </div>
     </div>`;
@@ -280,14 +276,6 @@ async function onClick(e: MouseEvent): Promise<void> {
   }
   if (handleRemindClick(root!, e)) return;
   if (target.id === 'parse') {
-    await parse();
-    return;
-  }
-  // чип-пример: подставить текст и разобрать сразу — старт без придумывания
-  const preset = target.closest<HTMLElement>('[data-preset]');
-  if (preset) {
-    const rawEl = root!.querySelector<HTMLInputElement>('#raw');
-    if (rawEl) rawEl.value = t(preset.dataset.preset as string);
     await parse();
     return;
   }

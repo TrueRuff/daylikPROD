@@ -59,7 +59,7 @@ function demoDismissed(): boolean {
   }
 }
 
-export type SeedResult = false | 'full' | 'tasks';
+type SeedResult = false | 'full' | 'tasks';
 
 // при входе: пустому аккаунту — полный демо-день, остальным — базовые дела
 // (один раз, пока не удалят кнопкой); свои данные не трогаем

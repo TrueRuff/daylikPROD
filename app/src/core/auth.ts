@@ -15,7 +15,7 @@ const SECRET = new TextEncoder().encode('daylik-local-hs256-secret');
 // встроенный аккаунт разработчика: админ видит журнал событий
 const BUILTIN = { login: 'админ', password: '123', role: 'admin' as const };
 
-export interface TokenPayload {
+interface TokenPayload {
   login?: string;
   role?: string;
   iat?: number;
@@ -139,7 +139,7 @@ export async function ensureBuiltinAdmin(): Promise<void> {
   log.info('auth.builtinAdmin', { login: BUILTIN.login });
 }
 
-export type AuthResult =
+type AuthResult =
   | { account: Account; token: string; error?: undefined }
   | { error: string; account?: undefined; token?: undefined };
 

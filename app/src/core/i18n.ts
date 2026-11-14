@@ -2,8 +2,8 @@
 // t(key, params) — перевод с подстановкой {параметров}; отсутствующий ключ
 // отдаётся сам ключом (невозможно потерять кнопку из-за опечатки в словаре).
 
-export type Lang = 'ru' | 'en';
-export type DictValue = string | string[];
+type Lang = 'ru' | 'en';
+type DictValue = string | string[];
 
 // экспортируется для теста полноты словарей (ru и en должны совпадать по ключам)
 export const DICTS: Record<Lang, Record<string, DictValue>> = {
@@ -211,14 +211,6 @@ export const DICTS: Record<Lang, Record<string, DictValue>> = {
     'input.intro': 'Опиши задуманное своими словами — приложение предложит тип и группу, остаётся подтвердить.',
     'input.placeholder': 'например: полить цветы на 15 минут',
     'input.parse': 'Разобрать',
-    'input.preset1': 'Выпить стакан воды',
-    'input.preset2': 'Прогулка на 15 минут',
-    'input.preset3': 'Помыть посуду',
-    'input.preset4': 'Разобрать стол на 10 минут',
-    'input.preset5': 'Полить цветы',
-    'input.preset6': 'Позвонить маме на 15 минут',
-    'input.preset7': 'Купить хлеб',
-    'input.preset8': 'Написать конспект на 30 минут',
     'kind.sphere': 'Направление',
     'kind.task': 'Дело',
     'kind.ongoing': 'Продолжительное',
@@ -448,14 +440,6 @@ export const DICTS: Record<Lang, Record<string, DictValue>> = {
     'input.intro': 'Describe what you have in mind in your own words — the app will suggest a type and a group, you just confirm.',
     'input.placeholder': 'e.g.: water the plants, 15 min',
     'input.parse': 'Parse',
-    'input.preset1': 'Drink a glass of water',
-    'input.preset2': '15-minute walk',
-    'input.preset3': 'Wash the dishes',
-    'input.preset4': 'Tidy the desk, 10 min',
-    'input.preset5': 'Water the plants',
-    'input.preset6': 'Call mom, 15 min',
-    'input.preset7': 'Buy bread',
-    'input.preset8': 'Write notes, 30 min',
     'kind.sphere': 'Area',
     'kind.task': 'Task',
     'kind.ongoing': 'Ongoing',

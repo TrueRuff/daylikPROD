@@ -7,7 +7,7 @@ import type { Practice, Task } from './models.js';
 
 const h = (min: number) => `${Math.floor(min / 60)}ч ${String(min % 60).padStart(2, '0')}м`;
 
-export interface DayStats {
+interface DayStats {
   plannedMin: number;
   doneMin: number;
   doneCount: number;

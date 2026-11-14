@@ -16,7 +16,7 @@ export interface ExportData {
   practices: Practice[];
 }
 
-export interface ParsedJson {
+interface ParsedJson {
   format: string;
   version: number;
   exportedAt: string;
@@ -213,7 +213,7 @@ export function serializeBinary(data: ExportData): Uint8Array {
   return w.result();
 }
 
-export interface ParsedBinary {
+interface ParsedBinary {
   spheres: Record<string, unknown>[];
   tasks: Record<string, unknown>[];
   practices: Record<string, unknown>[];

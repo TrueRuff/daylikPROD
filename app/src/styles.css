@@ -286,9 +286,8 @@ input[type='datetime-local'] {
 }
 select { width: auto; min-width: 150px; }
 
-.input-row { display: flex; gap: 8px; }
 /* поле быстрого ввода — не карточка, без отступа оно наезжает на предыдущий блок */
-.input-row { margin-top: 14px; }
+.input-row { display: flex; gap: 8px; margin-top: 14px; }
 .input-row input { flex: 1; width: auto; margin-top: 0; min-width: 0; }
 
 .grp { background: var(--surface); color: var(--ink); border: 1px solid var(--line-strong); }
@@ -465,7 +464,30 @@ select { width: auto; min-width: 150px; }
 .tl-now-row .tl-t { color: var(--now); font-weight: 650; }
 .tl-now-line { flex: 1; border-top: 2px solid var(--now); }
 .tl-row.drop-row .tl-card,
-.tl-row.drop-row .tl-free { box-shadow: 0 0 0 2px var(--accent); }
+.tl-row.drop-row .tl-free { box-shadow: 0 0 0 2px var(--accent); background: var(--accent-soft); color: var(--ink); }
+
+/* призрак «куда встанет дело»: полупрозрачная карточка с именем и временем
+   поверх строки-цели — паттерн Google Calendar / Sunsama (drag-превью) */
+.tl-drop-preview {
+  position: fixed;
+  z-index: 99;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  border-radius: 10px;
+  padding: 7px 11px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: #fff;
+  opacity: .92;
+  box-shadow: var(--shadow-lift);
+  outline: 2px dashed rgba(255, 255, 255, .6);
+  outline-offset: -2px;
+}
+.tl-drop-preview .tl-title { display: block; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-drop-preview .tl-dur { display: block; font-size: 11px; opacity: .85; font-variant-numeric: tabular-nums; }
 
 /* всплывающее время при перетаскивании карточки */
 .drag-time {
@@ -577,10 +599,15 @@ select { width: auto; min-width: 150px; }
   flex: 1;
   min-width: 0; /* нечленимое «слово» в названии не распирает строку */
   overflow-wrap: anywhere;
+  touch-action: pan-y;
+  cursor: grab;
+  user-select: none;
   text-align: left;
   background: var(--surface);
   color: var(--ink);
   border: 1px solid var(--line);
+  /* цветная кромка дела — цвет его группы (data-g ставит dayScreen) */
+  border-left: 3px solid var(--task-c, var(--line-strong));
   border-radius: var(--radius-sm);
   padding: 8px 12px;
   font-family: var(--font);
@@ -588,14 +615,11 @@ select { width: auto; min-width: 150px; }
   font-weight: 550;
   transition: border-color .15s, background .15s;
 }
-/* цветная кромка дела — цвет его группы (data-g ставит dayScreen) */
-.task-row .side-task { border-left: 3px solid var(--task-c, var(--line-strong)); }
 .task-row[data-g='Н'] { --task-c: var(--g-need); }
 .task-row[data-g='Ж'] { --task-c: var(--g-want); }
 .task-row[data-g='П'] { --task-c: var(--g-use); }
 .task-row .side-task:hover { border-color: var(--line-strong); border-left-color: var(--task-c, var(--line-strong)); background: var(--surface-soft); opacity: 1; }
 .task-row.dimmed { opacity: .55; }
-.task-row .side-task { touch-action: pan-y; cursor: grab; user-select: none; }
 .side-task, .pick-task {
   display: block;
   width: 100%;
@@ -736,6 +760,8 @@ select { width: auto; min-width: 150px; }
   font-size: 14px;
   font-weight: 550;
   transition: border-color .15s, background .15s;
+  touch-action: pan-y;
+  cursor: grab;
 }
 .sphere-meta { font-size: 11.5px; font-weight: 500; color: var(--ink-soft); }
 .sphere-item::before {
@@ -763,7 +789,6 @@ select { width: auto; min-width: 150px; }
 }
 .sphere-item:hover { border-color: var(--branch); opacity: 1; background: var(--surface-soft); }
 .sphere-item:hover::after { background: var(--branch); }
-.sphere-item { touch-action: pan-y; cursor: grab; }
 
 .practice-row {
   display: flex;
