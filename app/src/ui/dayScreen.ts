@@ -248,13 +248,16 @@ export function initDayScreen(root: HTMLElement): void {
 
     scrollEl.innerHTML = timelineHtml(blocks, windows);
     // прокрутка к разделителю «сейчас» внутри ленты: scrollIntoView тянул
-    // за собой всю страницу и уводил шапку с экрана
+    // за собой всю страницу и уводил шапку с экрана. На телефоне лента —
+    // в потоке страницы (стили ≤900px): стартуем сверху, с колонки дел
     if (!scrolledToNow && scrollEl.offsetHeight > 0) {
       scrolledToNow = true;
-      const nowRow = scrollEl.querySelector<HTMLElement>('.tl-now-row');
-      if (nowRow) {
-        const top = nowRow.getBoundingClientRect().top - scrollEl.getBoundingClientRect().top + scrollEl.scrollTop;
-        scrollEl.scrollTop = Math.max(0, top - scrollEl.clientHeight / 2);
+      if (scrollEl.scrollHeight > scrollEl.clientHeight) {
+        const nowRow = scrollEl.querySelector<HTMLElement>('.tl-now-row');
+        if (nowRow) {
+          const top = nowRow.getBoundingClientRect().top - scrollEl.getBoundingClientRect().top + scrollEl.scrollTop;
+          scrollEl.scrollTop = Math.max(0, top - scrollEl.clientHeight / 2);
+        }
       }
     }
 

@@ -287,6 +287,8 @@ input[type='datetime-local'] {
 select { width: auto; min-width: 150px; }
 
 .input-row { display: flex; gap: 8px; }
+/* поле быстрого ввода — не карточка, без отступа оно наезжает на предыдущий блок */
+.input-row { margin-top: 14px; }
 .input-row input { flex: 1; width: auto; margin-top: 0; min-width: 0; }
 
 .grp { background: var(--surface); color: var(--ink); border: 1px solid var(--line-strong); }
@@ -573,6 +575,8 @@ select { width: auto; min-width: 150px; }
 .task-row { display: flex; gap: 6px; margin: 6px 0; }
 .task-row .side-task {
   flex: 1;
+  min-width: 0; /* нечленимое «слово» в названии не распирает строку */
+  overflow-wrap: anywhere;
   text-align: left;
   background: var(--surface);
   color: var(--ink);
@@ -772,6 +776,10 @@ select { width: auto; min-width: 150px; }
 }
 /* метка регулярного: ↻ отличается от дел с галочкой */
 .routine-mark { color: var(--ink-soft); margin-right: 6px; font-size: 12px; }
+
+/* длинные нечленимые названия в flex-строках не распирают колонку */
+.practice-row > span,
+.area-task-row > span { min-width: 0; overflow-wrap: anywhere; }
 
 /* дело внутри карточки направления: цветная кромка группы, ✓ справа */
 .area-task-row {
@@ -1109,7 +1117,10 @@ select { width: auto; min-width: 150px; }
   .modal-overlay { padding: 3vh 10px calc(16px + env(safe-area-inset-bottom)); }
   /* журнал: длинные строки не растягивают страницу, таблица скроллится */
   #tab-log { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .tl-scroll { max-height: 62vh; }
+  /* лента дня в потоке страницы: свайп по таймлайну листает страницу, как
+     везде — вложенный скролл-контейнер на телефоне глушит жест у своей
+     границы (overscroll-behavior: contain) и делает листание непредсказуемым */
+  .tl-scroll { max-height: none; overflow: visible; overscroll-behavior: auto; }
   .cal-shell { padding: 10px 8px 6px; }
   .cal-week, .cal-grid { gap: 4px; }
   .cal-week span { font-size: 9px; letter-spacing: .04em; }
@@ -1218,23 +1229,3 @@ select { width: auto; min-width: 150px; }
 /* «Уже сделано»: закрытые дела видны сразу, позитив без счётчиков */
 .done-list { margin-top: 12px; display: flex; flex-direction: column; gap: 4px; }
 .done-title { font-size: 12px; margin: 4px 0; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-soft); }
-
-/* спокойный режим (кнопка #calm): декоративный цвет и движение убираются,
-   остаётся структура — ответ на жалобы ADHD-пользователей аналогов на
-   «cluttered» интерфейсы; функциональные акценты (выбор, «сейчас») остаются */
-[data-calm='1'] *,
-[data-calm='1'] *::before,
-[data-calm='1'] *::after { transition: none !important; animation: none !important; }
-[data-calm='1'] .tl-card.task {
-  background: var(--surface) !important;
-  border: 1px solid var(--line-strong);
-  color: var(--ink) !important;
-}
-[data-calm='1'] .tl-card.routine { background: var(--surface-soft); }
-[data-calm='1'] .sphere-dot { background: var(--line-strong) !important; }
-[data-calm='1'] .side-task,
-[data-calm='1'] .pick-task,
-[data-calm='1'] .done-item { border-left-color: var(--line-strong) !important; }
-[data-calm='1'] .focus-card { box-shadow: none; }
-[data-calm='1'] .screen-in { animation: none; }
-.icon-btn.on { background: var(--accent-soft); color: var(--ink); }

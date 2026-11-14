@@ -1,8 +1,11 @@
-// service worker: офлайн-режим PWA.
-// precache — оболочка приложения, /assets/ (именованные сборкой файлы) — cache-first,
-// навигация — сеть с откатом на index.html. Версия кэша меняется при обновлении сборки.
+// service worker: офлайн-режим PWA + автоматическое обновление.
+// Имя кэша постоянное — версия не бампается руками. Обновление работает так:
+// index.html — сеть с cache:'no-cache' (мимо HTTP-кэша браузера, который на
+// GitHub Pages не знает, что html нельзя кэшировать), ассеты сборки —
+// хэшированные имена, каждый релиз это новые URL, они подтягиваются на лету.
+// Офлайн: навигация откатывается на кэш, ассеты ищутся по всем кэшам.
 
-const CACHE = 'daylik-v6';
+const CACHE = 'daylik';
 const PRECACHE = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
@@ -23,7 +26,7 @@ self.addEventListener('fetch', (e) => {
 
   if (e.request.mode === 'navigate') {
     e.respondWith(
-      fetch(e.request)
+      fetch(e.request, { cache: 'no-cache' })
         .then((res) => {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put('./index.html', copy));
@@ -34,6 +37,8 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
+  // caches.match без указания кэша ищет по всем кэшам origin — если старая
+  // вкладка офлайн получила новый index.html, её ассеты найдутся в старом кэше
   e.respondWith(
     caches.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {
       const copy = res.clone();

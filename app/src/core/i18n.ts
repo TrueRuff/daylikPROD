@@ -29,7 +29,6 @@ export const DICTS: Record<Lang, Record<string, DictValue>> = {
     'auth.short': 'Пароль — минимум 3 символа',
     'auth.logout': 'Выйти',
     'theme.toggle': 'Сменить тему',
-    'calm.title': 'Спокойный режим',
 
     'day.title': 'Сегодня',
     'day.autoPlace': 'Разложить автоматически',
@@ -267,7 +266,6 @@ export const DICTS: Record<Lang, Record<string, DictValue>> = {
     'auth.short': 'Password must be at least 3 characters',
     'auth.logout': 'Sign out',
     'theme.toggle': 'Toggle theme',
-    'calm.title': 'Calm mode',
 
     'day.title': 'Today',
     'day.autoPlace': 'Auto-arrange',
