@@ -10,14 +10,22 @@ npm install
 npm run dev     # открыть адрес из консоли
 npm test        # тесты алгоритмов
 npm run build   # production-сборка
+npm run docs    # справочник API из исходников (docs/)
 ```
 
 ## LLM-разбор ввода (опционально)
 
 Без настройки ввод разбирается локальными правилами. Для разбора сложных
-формулировок через OpenRouter: скопировать `.env.example` в `.env`, вставить
-свой ключ (`openrouter.ai → Keys`) и перезапустить `npm run dev`. По умолчанию
-стоит роутер `openrouter/free` — сам выбирает свободную модель из бесплатных.
+формулировок скопировать `.env.example` в `.env` и заполнить:
+
+- `VITE_OPENROUTER_API_KEY` — ключ OpenRouter (`openrouter.ai → Keys`);
+- `VITE_LLM_API_URL` — адрес API (по умолчанию OpenRouter; для прямого
+  DeepSeek — `https://api.deepseek.com/v1/chat/completions`, модель
+  `deepseek-chat`; примеры обоих вариантов в `.env.example`).
+
+По умолчанию стоит роутер `openrouter/free` — сам выбирает свободную
+модель из бесплатных. После правки `.env` перезапустить `npm run dev`.
+Ключ зашивается в бандл (VITE-) — держать на ключе расходный лимит.
 
 ## Развёртывание
 
@@ -51,26 +59,34 @@ docker tag  docker.m.daocloud.io/library/nginx:alpine nginx:alpine
 ```
 app/
 ├── index.html            — точка входа браузера
-├── public/               — PWA: манифест, service worker, иконки, скриншоты обзора
+├── public/               — PWA: манифест, service worker, иконки, скриншоты онбординга
 ├── electron/
 │   └── main.cjs          — главный процесс Electron
 ├── Dockerfile, nginx.conf, docker-compose.yml — web-версия в контейнере
 ├── electron-builder.yml  — сборка установщика Windows (NSIS)
 ├── src/
-│   ├── main.js           — вкладки, экраны, напоминания, язык, service worker
+│   ├── main.ts           — точка входа: вход, вкладки, экраны, напоминания, язык
 │   ├── styles.css
 │   ├── core/             — алгоритмы и данные
-│   │   ├── models.js     — Sphere, Task, Practice, PlanBlock
-│   │   ├── storage.js    — IndexedDB через Dexie (+ таблица журнала)
-│   │   ├── categorize.js — гибридный разбор ввода (правила → LLM)
-│   │   ├── dayPlan.js    — таймлайн дня: свободные окна и упаковка дел
-│   │   ├── schedule.js   — время и дни недели
-│   │   ├── reminders.js  — напоминания (Notifications API)
-│   │   ├── serialization.js — экспорт/импорт: JSON и двоичный формат .daylik
-│   │   ├── log.js        — журнал событий с уровнями
-│   │   └── i18n.js       — локализация ru/en
+│   │   ├── models.ts     — Sphere, Task, Practice, PlanBlock
+│   │   ├── storage.ts    — IndexedDB через Dexie (владельцы, PBKDF2, журнал)
+│   │   ├── categorize.ts — гибридный разбор ввода (правила → LLM)
+│   │   ├── dayPlan.ts    — таймлайн дня: свободные окна и упаковка дел
+│   │   ├── schedule.ts   — время и дни недели
+│   │   ├── recurring.ts  — повторяющиеся дела
+│   │   ├── calendarEvents.ts — события месяца для экрана «Календарь»
+│   │   ├── analytics.ts  — сводка дня: план/факт/свободно
+│   │   ├── ics.ts        — экспорт календаря .ics
+│   │   ├── demoData.ts   — демо-набор для новых аккаунтов
+│   │   ├── auth.ts       — аккаунты, JWT-сессии, пароли
+│   │   ├── reminders.ts  — напоминания (Notifications API)
+│   │   ├── serialization.ts — экспорт/импорт: JSON и двоичный формат .daylik
+│   │   ├── log.ts        — журнал событий с уровнями
+│   │   └── i18n.ts       — локализация ru/en
 │   ├── ai/
-│   │   └── llmClient.js  — клиент OpenRouter с деградацией на правила
-│   └── ui/               — экраны: день (таймлайн), сферы, ввод, журнал
-└── tests/                — Vitest
+│   │   └── llmClient.ts  — клиент LLM (OpenRouter/DeepSeek) с деградацией на правила
+│   └── ui/               — экраны: день (таймлайн), направления, календарь,
+│                          журнал; onboarding.ts (обзор «?»), gesture.ts
+│                          (long-press drag, сторожа случайных кликов)
+└── tests/                — Vitest, файл на модуль
 ```

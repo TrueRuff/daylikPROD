@@ -466,6 +466,63 @@ select { width: auto; min-width: 150px; }
 .tl-row.drop-row .tl-card,
 .tl-row.drop-row .tl-free { box-shadow: 0 0 0 2px var(--accent); background: var(--accent-soft); color: var(--ink); }
 
+/* шкала недели (А4): занятость каждого из 7 дней столбиком */
+#week-scale { padding: 10px 12px 4px; border-bottom: 1px solid var(--line); }
+.week-title { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 6px; }
+.week-cells { display: flex; gap: 6px; align-items: flex-end; }
+.week-cell { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.week-bar {
+  width: 100%; height: 40px; display: flex; align-items: flex-end;
+  background: var(--surface-soft); border: 1px solid var(--line);
+  border-radius: 6px; overflow: hidden;
+}
+.week-fill { width: 100%; background: var(--accent-soft); border-top: 2px solid var(--accent); }
+.week-cell.today .week-fill { border-top-color: var(--now); }
+.week-label { font-size: 10.5px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.week-cell.today .week-label { color: var(--ink); font-weight: 600; }
+
+/* шкала дня (Б1): пропорциональная полоса 24ч с маркером «сейчас» */
+#day-scale { padding: 8px 12px 0; }
+.day-scale {
+  position: relative; height: 14px; border-radius: 7px;
+  background: var(--surface-soft); border: 1px solid var(--line); overflow: hidden;
+}
+.day-scale-seg {
+  position: absolute; top: 0; height: 100%;
+  border: none; padding: 0; cursor: pointer; opacity: .9;
+}
+.day-scale-seg.preview { outline: 1px dashed rgba(255, 255, 255, .8); outline-offset: -1px; }
+.day-scale-now {
+  position: absolute; top: 0; height: 100%; width: 2px;
+  background: var(--now); z-index: 1;
+}
+
+/* карточка-превью автокладки (А1): пунктирная рамка поверх фона */
+.tl-card.task.tl-preview { outline: 2px dashed rgba(255, 255, 255, .75); outline-offset: -3px; }
+
+/* превью-бар автокладки */
+#preview-bar {
+  display: flex; gap: 10px; align-items: center; justify-content: space-between;
+  padding: 10px 12px; margin: 8px 12px 0;
+  border: 1px dashed var(--accent); border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+}
+
+/* зона «Не влезает сегодня» (А3) */
+.notfit-zone { margin-top: 12px; padding-top: 4px; border-top: 1px dashed var(--line-strong); }
+.nf-postpone {
+  min-width: 44px; padding: 4px 8px; font-size: 11.5px; font-weight: 600;
+  background: var(--surface); color: var(--ink-soft);
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  font-family: var(--font);
+}
+.nf-postpone:hover { background: var(--accent-soft); color: var(--ink); }
+
+/* микрофидбек (Б3): карточка «приподнимается» при взятии */
+.task-row .side-task.drag-lift,
+.tl-card.task.drag-lift { box-shadow: var(--shadow-lift); }
+.hold-hint, .autoplace-note { margin: 6px 0; font-size: 12.5px; color: var(--ink-soft); }
+
 /* призрак «куда встанет дело»: полупрозрачная карточка с именем и временем
    поверх строки-цели — паттерн Google Calendar / Sunsama (drag-превью) */
 .tl-drop-preview {

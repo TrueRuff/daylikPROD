@@ -4,7 +4,7 @@
 // без сервера — секрет подписи хранится в коде, проверка токена отсекает
 // ручную подделку payload и просроченные сессии.
 
-import { getAccount, putAccount } from './storage.js';
+import { getAccount, putAccount, BUILTIN_LOGIN } from './storage.js';
 import type { Account } from './storage.js';
 import { log } from './log.js';
 
@@ -13,7 +13,7 @@ const TOKEN_TTL_MS = 30 * 24 * 3600 * 1000;
 const SECRET = new TextEncoder().encode('daylik-local-hs256-secret');
 
 // встроенный аккаунт разработчика: админ видит журнал событий
-const BUILTIN = { login: 'админ', password: '123', role: 'admin' as const };
+const BUILTIN = { login: BUILTIN_LOGIN, password: '123', role: 'admin' as const };
 
 interface TokenPayload {
   login?: string;
@@ -59,9 +59,30 @@ async function sha256Hex(text: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-// соль на аккаунт — одинаковые пароли дают разные хэши
+// соль на аккаунт — одинаковые пароли дают разные хэши.
+// схема хэша с префиксом: PBKDF2-SHA256 (100 тысяч итераций) для новых
+// аккаунтов; записи без префикса — легаси-хэши первых версий, проверяются
+// по одиночному SHA-256 и при успешном входе обновляются до PBKDF2
+const PBKDF2_ITERATIONS = 100_000;
+
+async function pbkdf2Hex(password: string, salt: string, iterations: number): Promise<string> {
+  const key = await crypto.subtle.importKey('raw', buf(enc.encode(password)), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt: buf(enc.encode(salt)), iterations }, key, 256);
+  return [...new Uint8Array(bits)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 async function hashPassword(password: string, salt: string): Promise<string> {
-  return sha256Hex(`${salt}:${password}`);
+  return `pbkdf2:${PBKDF2_ITERATIONS}:${await pbkdf2Hex(password, salt, PBKDF2_ITERATIONS)}`;
+}
+
+// проверяет пароль по схеме, записанной в хэше аккаунта
+async function verifyPassword(password: string, salt: string, passHash: string): Promise<boolean> {
+  if (passHash.startsWith('pbkdf2:')) {
+    const iterations = Number(passHash.split(':')[1]);
+    return (await pbkdf2Hex(password, salt, iterations)) === passHash.split(':')[2];
+  }
+  return (await sha256Hex(`${salt}:${password}`)) === passHash;
 }
 
 async function hmacKey(): Promise<CryptoKey> {
@@ -162,8 +183,13 @@ export async function register(login: unknown, password: unknown): Promise<AuthR
 export async function login(login: unknown, password: unknown): Promise<AuthResult> {
   const account = await getAccount(String(login || '').trim());
   if (!account) return { error: 'auth.wrong' };
-  if (await hashPassword(String(password || ''), account.salt) !== account.passHash) {
+  const pass = String(password || '');
+  if (!(await verifyPassword(pass, account.salt, account.passHash))) {
     return { error: 'auth.wrong' };
+  }
+  // легаси-хэш пересчитывается в PBKDF2 при успешном входе
+  if (!account.passHash.startsWith('pbkdf2:')) {
+    await putAccount({ ...account, passHash: await hashPassword(pass, account.salt) });
   }
   const token = await signToken({ login: account.login, role: account.role });
   saveToken(token);

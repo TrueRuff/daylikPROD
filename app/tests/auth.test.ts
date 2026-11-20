@@ -26,13 +26,14 @@ beforeEach(async () => {
 });
 
 describe('аккаунты', () => {
-  it('регистрация создаёт аккаунт и хранит пароль хэшем с солью', async () => {
+  it('регистрация создаёт аккаунт и хранит пароль PBKDF2-хэшем с солью', async () => {
     const res = await register('bob', 'secret');
     expect(res.error).toBeUndefined();
     expect(res.account.role).toBe('user');
     const row = await getAccount('bob');
     expect(row.passHash).not.toContain('secret');
-    expect(row.passHash).toMatch(/^[0-9a-f]{64}$/);
+    // схема хэша — префиксом: pbkdf2:<итерации>:<hex>, соль у каждого аккаунта своя
+    expect(row.passHash).toMatch(/^pbkdf2:\d+:[0-9a-f]{64}$/);
     expect(row.salt).toBeTruthy();
   });
 

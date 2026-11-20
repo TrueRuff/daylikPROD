@@ -4,7 +4,7 @@
 // кнопкой «Убрать тестовые данные».
 
 import { Sphere, Practice, Task } from './models.js';
-import { getAllSpheres, getPractices, getTasks, saveSphere, savePractice, saveTask, getDataOwner } from './storage.js';
+import { getAllSpheres, getPractices, getTasks, saveSphere, savePractice, saveTask, getDataOwner, inDataTransaction } from './storage.js';
 import { log } from './log.js';
 
 const WEEKDAYS = [1, 2, 3, 4, 5];
@@ -70,16 +70,21 @@ export async function seedOnLogin(): Promise<SeedResult> {
 
   if (!allSpheres.length && !allPractices.length && !allTasks.length) {
     const saved = makeSpheres();
-    for (const s of saved) await saveSphere(s);
     const byName = Object.fromEntries(saved.map((s) => [s.name, s.id]));
     const practices = makePractices(byName);
-    for (const p of practices) await savePractice(p);
-    for (const t of makeTasks(byName)) await saveTask(t);
+    const tasks = makeTasks(byName);
+    await inDataTransaction(async () => {
+      for (const s of saved) await saveSphere(s);
+      for (const p of practices) await savePractice(p);
+      for (const t of tasks) await saveTask(t);
+    });
     log.info('demo.seeded', { spheres: saved.length, practices: practices.length, tasks: 3 });
     return 'full';
   }
   if (!hasDemoTask) {
-    for (const t of baseTasks()) await saveTask(t);
+    await inDataTransaction(async () => {
+      for (const t of baseTasks()) await saveTask(t);
+    });
     log.info('demo.baseTasks', { n: 3 });
     return 'tasks';
   }

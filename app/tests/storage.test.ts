@@ -156,6 +156,8 @@ describe('журнал и импорт', () => {
   });
 
   it('импорт полностью заменяет данные', async () => {
+    // импорт без входа запрещён (не трогает чужие таблицы) — входим
+    setDataOwner('bob');
     await saveTask(task('old'));
     await importAll({
       spheres: [{ id: 's1', name: 'Сон', group: 'Н' }],
@@ -165,5 +167,14 @@ describe('журнал и импорт', () => {
     const tasks = await getTasks();
     expect(tasks.map((x) => x.id)).toEqual(['n1']);
     expect((await getAllSpheres()).map((x) => x.name)).toEqual(['Сон']);
+    setDataOwner(null);
+  });
+
+  it('импорт без владельца бросает ошибку и не трогает базу', async () => {
+    setDataOwner(null);
+    await saveTask(task('keep'));
+    await expect(importAll({ spheres: [], tasks: [{ id: 'x', title: 'X', group: 'Н', durationMin: 10 }], practices: [] }))
+      .rejects.toThrow('storage.importNoOwner');
+    expect((await getTasks()).map((x) => x.id)).toEqual(['keep']);
   });
 });

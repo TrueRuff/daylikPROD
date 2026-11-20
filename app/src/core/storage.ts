@@ -57,7 +57,7 @@ db.version(4).stores({
   practices: 'id, sphereId, owner',
 }).upgrade(async (tx) => {
   for (const name of ['spheres', 'tasks', 'practices']) {
-    await tx.table(name).toCollection().modify((row: { owner?: string }) => { row.owner = 'админ'; });
+    await tx.table(name).toCollection().modify((row: { owner?: string }) => { row.owner = BUILTIN_LOGIN; });
   }
 });
 
@@ -219,8 +219,10 @@ export async function deletePractice(id: string): Promise<void> {
 
 // сфера удаляется вместе со своими практиками
 export async function deleteSphere(id: string): Promise<void> {
-  await db.spheres.delete(id);
-  await db.practices.where('sphereId').equals(id).delete();
+  await db.transaction('rw', db.spheres, db.practices, async () => {
+    await db.spheres.delete(id);
+    await db.practices.where('sphereId').equals(id).delete();
+  });
 }
 
 // экспорт/импорт данных (см. serialization.js); без владельца — все записи,
@@ -238,6 +240,7 @@ export async function exportAll(): Promise<ExportData> {
 // импорт с заменой данных текущего владельца (или всех, пока входа не было);
 // возвращает очищенные записи
 export async function importAll(data: unknown): Promise<ExportData> {
+  if (dataOwner == null) throw new Error('storage.importNoOwner');
   const clean = normalizeImport(data);
   const stamp = <T extends OwnedRow>(rows: T[]): T[] => rows.map((r) => stampOwner({ ...r }));
   await db.transaction('rw', db.spheres, db.tasks, db.practices, async () => {
@@ -258,6 +261,12 @@ export async function importAll(data: unknown): Promise<ExportData> {
   return clean;
 }
 
+// транзакция на все таблицы данных — для многошаговых операций ядра
+// (сидирование демо-набора): частичный сбой откатывается целиком
+export function inDataTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  return db.transaction('rw', [db.spheres, db.tasks, db.practices], fn);
+}
+
 // тестовая утилита: полная очистка таблиц (используется только из тестов)
 export async function __clearForTests(): Promise<void> {
   await db.spheres.clear();
@@ -266,6 +275,10 @@ export async function __clearForTests(): Promise<void> {
   await db.logs.clear();
   await db.accounts.clear();
 }
+
+// встроенный аккаунт разработчика (логин знает и auth.ts —
+// миграции и сидирование привязывают данные к нему)
+export const BUILTIN_LOGIN = 'админ';
 
 // журнал: записи пишутся в таблицу logs, хвост длиннее LOG_CAP подрезается
 // (проверка объёма раз в 50 записей, чтобы каждый лог не стоил лишнего запроса)

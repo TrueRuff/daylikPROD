@@ -1,18 +1,22 @@
-// клиент LLM API (OpenRouter, бесплатный тариф).
-// ключ и модель берутся из .env (VITE_OPENROUTER_API_KEY, VITE_LLM_MODEL, см. .env.example).
-// любая ошибка — нет ключа, сеть, HTTP, неожиданный ответ — даёт null: разбор падает на правила.
+// клиент LLM API. По умолчанию — OpenRouter (бесплатный тариф); адрес,
+// ключ и модель берутся из .env (VITE_OPENROUTER_API_KEY, VITE_LLM_MODEL,
+// VITE_LLM_API_URL, см. .env.example) — совместимые API (DeepSeek и др.)
+// подключаются без правок кода. Любая ошибка — нет ключа, сеть, HTTP,
+// неожиданный ответ — даёт null: разбор падает на правила.
 
 import { log } from '../core/log.js';
 import type { CategorizeResult } from '../core/categorize.js';
 import type { SphereGroup } from '../core/models.js';
 
-const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const API_URL = import.meta.env.VITE_LLM_API_URL || 'https://openrouter.ai/api/v1/chat/completions';
 const REQUEST_TIMEOUT_MS = 20000;
 const RETRY_DELAY_MS = 2000;
 // у бесплатных моделей общий пул: 429/5xx часто уходит за секунды — пробуем ещё раз
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
 // openrouter/free — роутер: сам выбирает свободную модель из бесплатных
 const DEFAULT_MODEL = 'openrouter/free';
+// поле reasoning — расширение OpenRouter; строгие совместимые API его не понимают
+const IS_OPENROUTER = API_URL.includes('openrouter.ai');
 
 const KINDS = new Set(['task', 'routine', 'sphere']);
 const GROUPS = new Set(['Н', 'Ж', 'П']);
@@ -27,6 +31,17 @@ durationMin — длительность в минутах от 5 до 240, ук
 repeatRule — "daily" или "weekly", указывай только для routine.`;
 
 async function sendRequest(apiKey: string, model: string, userText: string, systemPrompt: string = SYSTEM_PROMPT): Promise<Response | null> {
+  const payload: Record<string, unknown> = {
+    model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userText },
+    ],
+    temperature: 0,
+    // запас на reasoning-токены, иначе у резонеров обрезается сам ответ
+    max_tokens: 1000,
+  };
+  if (IS_OPENROUTER) payload.reasoning = { exclude: true };
   try {
     return await fetch(API_URL, {
       method: 'POST',
@@ -34,17 +49,7 @@ async function sendRequest(apiKey: string, model: string, userText: string, syst
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userText },
-        ],
-        temperature: 0,
-        // запас на reasoning-токены, иначе у резонеров обрезается сам ответ
-        max_tokens: 1000,
-        reasoning: { exclude: true },
-      }),
+      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch {

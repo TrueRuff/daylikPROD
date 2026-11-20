@@ -5,6 +5,8 @@
 type Lang = 'ru' | 'en';
 type DictValue = string | string[];
 
+import { log } from './log.js';
+
 // экспортируется для теста полноты словарей (ru и en должны совпадать по ключам)
 export const DICTS: Record<Lang, Record<string, DictValue>> = {
   ru: {
@@ -32,6 +34,17 @@ export const DICTS: Record<Lang, Record<string, DictValue>> = {
 
     'day.title': 'Сегодня',
     'day.autoPlace': 'Разложить автоматически',
+    'day.until': 'до {time}',
+    'day.holdHint': 'удержи карточку — и перетащи её в таймлайн',
+    'day.autoplace.low': 'автокладка: короткие дела — вперёд, пока мало сил',
+    'day.autoplace.normal': 'автокладка: по важности групп Н → Ж → П, внутри группы — короткие раньше',
+    'day.autoplace.high': 'автокладка: длинные дела — вперёд, на подъёме сил',
+    'day.previewApply': 'Применить',
+    'day.previewInfo': 'расставлено {n} · не влезло {m}',
+    'day.notFitTitle': 'Не влезает сегодня',
+    'day.postpone': 'на завтра',
+    'day.weekTitle': 'Неделя: занятость по дням',
+    'day.weekTip': 'свободно {free}',
     'day.tasks': 'Дела',
     'day.doneToday': 'Уже сделано',
     'day.doneMore': 'ещё {n}',
@@ -150,6 +163,7 @@ export const DICTS: Record<Lang, Record<string, DictValue>> = {
     'repeat.everyDays': 'N, дней',
 
     'common.close': 'Закрыть',
+    'common.cancel': 'Отмена',
     'common.title': 'Название',
     'common.save': 'Сохранить',
     'common.delete': 'Удалить',
@@ -261,6 +275,17 @@ export const DICTS: Record<Lang, Record<string, DictValue>> = {
 
     'day.title': 'Today',
     'day.autoPlace': 'Auto-arrange',
+    'day.until': 'until {time}',
+    'day.holdHint': 'hold a card — then drag it into the timeline',
+    'day.autoplace.low': 'auto-arrange: short tasks first while energy is low',
+    'day.autoplace.normal': 'auto-arrange: by group importance Н → Ж → П, shorter first',
+    'day.autoplace.high': 'auto-arrange: long tasks first while energy is high',
+    'day.previewApply': 'Apply',
+    'day.previewInfo': 'placed {n} · does not fit {m}',
+    'day.notFitTitle': 'Does not fit today',
+    'day.postpone': 'to tomorrow',
+    'day.weekTitle': 'Week: load by day',
+    'day.weekTip': '{free} free',
     'day.tasks': 'Tasks',
     'day.doneToday': 'Already done',
     'day.doneMore': '{n} more',
@@ -379,6 +404,7 @@ export const DICTS: Record<Lang, Record<string, DictValue>> = {
     'repeat.everyDays': 'N, days',
 
     'common.close': 'Close',
+    'common.cancel': 'Cancel',
     'common.title': 'Title',
     'common.save': 'Save',
     'common.delete': 'Delete',
@@ -474,6 +500,7 @@ let current: Lang = 'ru';
 try {
   const saved = localStorage.getItem(LANG_KEY);
   if (saved && saved in DICTS) current = saved as Lang;
+if (typeof document !== 'undefined') document.documentElement.lang = current;
 } catch {
   // localStorage недоступен — язык по умолчанию
 }
@@ -503,11 +530,13 @@ export function onChange(fn: Listener): () => boolean {
 }
 
 export function t(key: string, params?: Record<string, unknown>): string {
-  const val = DICTS[current]?.[key] ?? DICTS.ru[key] ?? key;
-  if (typeof val === 'string' && params) {
-    return val.replace(PARAM_RE, (_, name) => String(params[name] ?? ''));
+  const val = DICTS[current]?.[key] ?? DICTS.ru[key];
+  if (val == null) log.warn('i18n.missingKey', { key });
+  const out = val ?? key;
+  if (typeof out === 'string' && params) {
+    return out.replace(PARAM_RE, (_, name) => String(params[name] ?? ''));
   }
-  return val as string;
+  return out as string;
 }
 
 // статические узлы index.html: data-i18n (текст), data-i18n-title, data-i18n-placeholder

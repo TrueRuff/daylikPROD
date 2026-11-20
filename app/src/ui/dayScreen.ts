@@ -7,11 +7,12 @@ import { getPractices, getTasks, updateTask, deleteTask, getAllSpheres, complete
 import type { TaskPatch } from '../core/storage.js';
 import { categorize } from '../core/categorize.js';
 import { breakdownWithLlm } from '../ai/llmClient.js';
-import { practiceAppliesOn, minutesToTime, timeToMinutes, tsToLocalInput, todayStr, addDays } from '../core/schedule.js';
+import { practiceAppliesOn, minutesToTime, timeToMinutes, tsToLocalInput, todayStr, addDays, weekdayOf } from '../core/schedule.js';
 import {
   buildDay, computeFreeWindows, practicesToBlocks,
   adaptiveSort, autoPlaceLimit, recommendNow,
 } from '../core/dayPlan.js';
+// autoPlaceLimit — лимит «мало сил» в превью автокладки (startAutoPreview)
 import type { Energy, FreeWindow, Occupancy, Recommendation } from '../core/dayPlan.js';
 import { GROUP_COLORS } from '../core/calendarEvents.js';
 import { dayStats } from '../core/analytics.js';
@@ -27,6 +28,7 @@ import { installClickGuard, DRAG_PX, ARM_MOVE_PX, armOnLongPress } from './gestu
 
 const ENERGY_KEY = 'daylik-energy';
 const WELCOME_KEY = 'daylik-welcome';
+const HOLD_HINT_KEY = 'daylik-hold-hint';
 
 const MINUTES = 1440;
 const DRAG_PX_PER_MIN = 1; // вертикальное перетаскивание карточки меняет время
@@ -41,7 +43,9 @@ type TaskBlock = {
   taskId: string;
   group: SphereGroup;
   sphereId: string | null;
+  preview?: boolean; // карточка превью автокладки (А1) — пунктир, в базе её ещё нет
 };
+
 type TimelineBlock = RoutineBlock | TaskBlock;
 
 interface DayState {
@@ -77,6 +81,7 @@ type SideGesture = {
   type: 'side';
   id: string;
   task: Task;
+  el: HTMLElement; // карточка-источник в колонке дел
   startX: number;
   startY: number;
   moved: boolean;
@@ -142,10 +147,13 @@ export function initDayScreen(root: HTMLElement): void {
   let energy: Energy = loadEnergy();
   let whatNow: Recommendation | 'empty' | null = null;   // рекомендация «что сейчас»
   let whatNowAuto = true; // подсказка показывается сама, пока пользователь не закроет её
+  let autoPlaceNote: string | null = null; // объяснение стратегии последней автокладки (А2)
   let skipIds = new Set<string>(); // «не это»: дела, снятые с рекомендаций в этой сессии
   let editPractice: string | null = null; // id редактируемого блока дня (рутины)
   let pickAt: number | null = null;    // минута выбранного на таймлайне окна (выбор дела)
   let scrolledToNow = false;
+  // превью автокладки (А1): план показывается пунктиром, в базу пишется по «Применить»
+  let autoPreview: { placed: { id: string; start: number; end: number }[]; postponed: string[] } | null = null;
 
   // таймер работы над делом: внешний каркас времени (как в Routinery/Tiimo).
   // Хранится в localStorage — переживает перезагрузку страницы
@@ -177,7 +185,12 @@ export function initDayScreen(root: HTMLElement): void {
   root.innerHTML = `
     <div id="day-top"></div>
     <div class="day-wrap">
-      <div id="cal-wrap"><div class="tl-scroll" id="tl-scroll"></div></div>
+      <div id="cal-wrap">
+        <div id="week-scale"></div>
+        <div id="preview-bar" hidden></div>
+        <div id="day-scale"></div>
+        <div class="tl-scroll" id="tl-scroll"></div>
+      </div>
       <div class="side" id="side"></div>
     </div>
     <div id="day-modal" hidden></div>`;
@@ -186,6 +199,9 @@ export function initDayScreen(root: HTMLElement): void {
   const sideEl = root.querySelector<HTMLElement>('#side')!;
   const modalEl = root.querySelector<HTMLElement>('#day-modal')!;
   const scrollEl = root.querySelector<HTMLElement>('#tl-scroll')!;
+  const weekScaleEl = root.querySelector<HTMLElement>('#week-scale')!;
+  const previewBarEl = root.querySelector<HTMLElement>('#preview-bar')!;
+  const dayScaleEl = root.querySelector<HTMLElement>('#day-scale')!;
 
   bindTimeMasks(root);
   installClickGuard(root);
@@ -200,7 +216,8 @@ export function initDayScreen(root: HTMLElement): void {
     const quickVal = root.querySelector<HTMLInputElement>('#quick-add')?.value || '';
 
     const date = todayStr();
-    const practices = (await getPractices()).filter((p) => practiceAppliesOn(p, todayWeekday()));
+    const practicesAll = await getPractices();
+    const practices = practicesAll.filter((p) => practiceAppliesOn(p, todayWeekday()));
 
     const todo = await getTasks({ status: 'todo' });
     const done = (await getTasks({ status: 'done' })).sort((a, b) => b.createdAt - a.createdAt);
@@ -216,6 +233,8 @@ export function initDayScreen(root: HTMLElement): void {
     // сегодняшняя колонка дел: без даты или «на сегодня без времени»;
     // завтрашние не давят, вчерашние живут в баннере хвостов
     const unscheduled = todo.filter((x) => !x.scheduledDate || (x.scheduledDate === date && x.scheduledStart == null));
+    // дела, показанные превью автокладки, из колонки временно убираются
+    const previewIds = new Set((autoPreview?.placed ?? []).map((p) => p.id));
 
     const blocks: TimelineBlock[] = [
       ...practicesToBlocks(practices).map((r) => ({ ...r, kind: 'routine' as const })),
@@ -226,8 +245,8 @@ export function initDayScreen(root: HTMLElement): void {
 
     const windows = computeFreeWindows(blocks);
     const fits = (x: Task) => windows.some((w) => w.end - w.start >= x.durationMin);
-    const placeable = adaptiveSort(unscheduled.filter(fits), energy);
-    const notFitting = unscheduled.filter((x) => !fits(x));
+    const placeable = adaptiveSort(unscheduled.filter((x) => !previewIds.has(x.id) && fits(x)), energy);
+    const notFitting = unscheduled.filter((x) => !previewIds.has(x.id) && !fits(x));
     const overdue = todo.filter((x) => x.scheduledDate && x.scheduledDate < date);
     const routines = practices.map((p) => ({ start: p.start, end: p.end, label: p.title }));
     const stats = dayStats(date, todo, done, practices);
@@ -239,14 +258,25 @@ export function initDayScreen(root: HTMLElement): void {
       sphereColors: Object.fromEntries(spheres.map((s) => [s.id, sphereColor(s.id)])) };
 
     // автоподсказка «что сейчас»: показываем сами, пока пользователь не закрыл;
-    // снятые «не это» дела в рекомендации не возвращаются
-    if (!whatNow && whatNowAuto && placeable.length) {
+    // снятые «не это» дела в рекомендации не возвращаются; при активном превью — не шумим
+    if (!autoPreview && !whatNow && whatNowAuto && placeable.length) {
       const rec = recommendNow(state.windows,
         state.unscheduled.filter((x) => !skipIds.has(x.id)), nowMinutes(), energy);
       if (rec) whatNow = rec;
     }
 
-    scrollEl.innerHTML = timelineHtml(blocks, windows);
+    // превью автокладки (А1): план рисуется пунктирными карточками поверх факта
+    const previewBlocks: TimelineBlock[] = (autoPreview?.placed ?? []).map((p) => {
+      const t = state!.allTasks.find((x) => x.id === p.id);
+      return {
+        start: p.start, end: p.end, kind: 'task' as const, taskId: p.id,
+        label: t?.title ?? '', group: t?.group ?? 'П', sphereId: t?.sphereId ?? null,
+        preview: true,
+      };
+    });
+    const shownBlocks: TimelineBlock[] = [...blocks, ...previewBlocks].sort((a, b) => a.start - b.start);
+
+    scrollEl.innerHTML = timelineHtml(shownBlocks, windows);
     // прокрутка к разделителю «сейчас» внутри ленты: scrollIntoView тянул
     // за собой всю страницу и уводил шапку с экрана. На телефоне лента —
     // в потоке страницы (стили ≤900px): стартуем сверху, с колонки дел
@@ -315,6 +345,55 @@ export function initDayScreen(root: HTMLElement): void {
     const qa = root.querySelector<HTMLInputElement>('#quick-add');
     if (qa && quickVal) qa.value = quickVal;
 
+    // шкала недели (А4): занятость/свобода на 7 дней вперёд —
+    // рутины по дням недели + поставленные дела, свобода = остаток суток
+    const weekCells: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const wd = weekdayOf(ds);
+      const routineMin = practicesAll
+        .filter((p) => practiceAppliesOn(p, wd))
+        .reduce((s2, p) => s2 + (p.end > p.start ? p.end - p.start : 1440 - p.start + p.end), 0);
+      const taskMin = todo.filter((x) => x.scheduledDate === ds).reduce((s2, x) => s2 + x.durationMin, 0);
+      const busy = Math.min(1440, routineMin + taskMin);
+      const busyPct = Math.round((busy / 1440) * 100);
+      const label = d.toLocaleDateString(getLang() === 'en' ? 'en-GB' : 'ru-RU', { weekday: 'short' });
+      weekCells.push(`<div class="week-cell${i === 0 ? ' today' : ''}"
+        title="${t('day.weekTip', { free: fmt(1440 - busy) })}">
+        <span class="week-bar"><span class="week-fill" style="height:${busyPct}%"></span></span>
+        <span class="week-label">${label} ${d.getDate()}</span>
+      </div>`);
+    }
+    weekScaleEl.innerHTML = `<div class="week-title muted">${t('day.weekTitle')}</div>
+      <div class="week-cells">${weekCells.join('')}</div>`;
+
+    // шкала дня (Б1): пропорциональная полоса 24 часов — рутины серым,
+    // дела цветами направлений, маркер «сейчас»; клик по сегменту скроллит к строке
+    const nowMin = nowMinutes();
+    const segs = shownBlocks.map((b) => {
+      const color = b.kind === 'routine'
+        ? 'var(--surface-soft)'
+        : ((b.sphereId && state!.sphereColors[b.sphereId]) || GROUP_COLORS[b.group]) ?? 'var(--accent)';
+      return { start: b.start, end: b.end, color, preview: b.kind === 'task' && b.preview };
+    });
+    const segHtml = segs.map((s2) => `<button class="day-scale-seg${s2.preview ? ' preview' : ''}"
+      data-start="${s2.start}" title="${minutesToTime(s2.start)}–${minutesToTime(s2.end)}"
+      style="left:${(s2.start / MINUTES) * 100}%;width:${((s2.end - s2.start) / MINUTES) * 100}%;background:${s2.color}"></button>`).join('');
+    const nowPos = (nowMin / MINUTES) * 100;
+    dayScaleEl.innerHTML = `<div class="day-scale">
+      ${segHtml}
+      <span class="day-scale-now" style="left:${nowPos}%"></span>
+    </div>`;
+
+    // превью-бар (А1): счётчики и кнопки применения/отмены плана
+    previewBarEl.hidden = !autoPreview;
+    previewBarEl.innerHTML = autoPreview ? `
+      <span class="muted">${t('day.previewInfo', { n: autoPreview.placed.length, m: autoPreview.postponed.length })}</span>
+      <button id="preview-apply">${t('day.previewApply')}</button>
+      <button id="preview-cancel" class="secondary">${t('common.cancel')}</button>` : '';
+
     // карточки правки (дело, блок дня) и выбор дела на время живут в модальном окне
     const modalHtml = editTask
       ? editCardHtml(editTask, spheres)
@@ -328,22 +407,34 @@ export function initDayScreen(root: HTMLElement): void {
     // (никуда не денутся, просто не давят); «норм»/«много» — как раньше
     const shown = low ? placeable.slice(0, 3) : placeable;
     const hiddenCount = placeable.length - shown.length;
+    // зона «Не влезает сегодня» (А3): при превью — всё, что план не расставил
+    const zoneTasks = autoPreview
+      ? unscheduled.filter((x) => !previewIds.has(x.id))
+      : notFitting;
 
     sideEl.innerHTML = `
       <div class="side-head">
         <h3>${t('day.tasks')}</h3>
         <button id="auto-place" class="secondary">${t('day.autoPlace')}</button>
       </div>
-      ${unscheduled.length
-        ? [...shown, ...notFitting].map((x) => taskRowHtml(x, fits(x))).join('')
-          + (hiddenCount > 0 ? `
+      ${autoPlaceNote ? `<p class="muted autoplace-note">${autoPlaceNote}</p>` : ''}
+      ${localStorage.getItem(HOLD_HINT_KEY) || (!shown.length && !zoneTasks.length) ? '' : `
+      <p class="muted hold-hint">${t('day.holdHint')}</p>`}
+      ${shown.map((x) => taskRowHtml(x, fits(x))).join('')}
+      ${hiddenCount > 0 ? `
       <details class="more-params col-more">
         <summary>${t('day.colMore', { n: hiddenCount })}</summary>
         ${placeable.slice(3).map((x) => taskRowHtml(x, fits(x))).join('')}
-      </details>` : '')
-        : `<div class="col-empty">
-            <p class="muted">${t('day.startOne')}</p>
-          </div>`}
+      </details>` : ''}
+      ${zoneTasks.length ? `
+      <div class="notfit-zone">
+        <span class="done-title">${t('day.notFitTitle')}</span>
+        ${zoneTasks.map((x) => notFitRowHtml(x)).join('')}
+      </div>` : ''}
+      ${!shown.length && !zoneTasks.length ? `
+      <div class="col-empty">
+        <p class="muted">${t('day.startOne')}</p>
+      </div>` : ''}
       ${done.length ? `
       <div class="done-list">
         <span class="done-title">${t('day.doneToday')}</span>
@@ -380,6 +471,20 @@ export function initDayScreen(root: HTMLElement): void {
           title="${canPlace ? t('task.putFirst') : t('task.putOverlap')}">${label}</button>
         <button class="edit-btn" data-id="${task.id}" title="${t('task.editTip')}">✎</button>
         <button class="done-btn" data-id="${task.id}" title="${t('task.markDone')}">✓</button>
+      </div>`;
+  }
+
+  // строка зоны «Не влезает сегодня» (А3): дело плюс действия —
+  // перенести на завтра или открыть карточку
+  function notFitRowHtml(task: Task): string {
+    const label = taskLabel(task, ` — ${t('day.notFit')}`);
+    const sphereC = task.sphereId && state!.sphereColors[task.sphereId];
+    return `
+      <div class="task-row dimmed" data-id="${task.id}" data-g="${task.group}"${sphereC ? ` style="--task-c:${sphereC}"` : ''}>
+        <button class="side-task" data-id="${task.id}"
+          title="${t('task.putOverlap')}">${label}</button>
+        <button class="nf-postpone" data-id="${task.id}" title="${t('day.postpone')}">${t('day.postpone')}</button>
+        <button class="edit-btn" data-id="${task.id}" title="${t('task.editTip')}">✎</button>
       </div>`;
   }
 
@@ -567,9 +672,9 @@ export function initDayScreen(root: HTMLElement): void {
         const color = (b.sphereId ? state!.sphereColors[b.sphereId] : '') || (GROUP_COLORS[b.group] ?? 'var(--accent)');
         rows.push(`<div class="tl-row${cls}" data-start="${b.start}" data-min="${b.start}">
           <div class="tl-t">${minutesToTime(b.start)}</div>
-          <div class="tl-card task" data-task="${b.taskId}" data-g="${b.group}" style="background:${color}">
+          <div class="tl-card task${b.preview ? ' tl-preview' : ''}" data-task="${b.taskId}" data-g="${b.group}" style="background:${color}">
             <span class="tl-title">${escapeHtml(b.label)}</span>
-            <span class="tl-dur">${fmtDur(b.end - b.start)}${remain}</span>
+            <span class="tl-dur">${t('day.until', { time: minutesToTime(b.end) })} · ${fmtDur(b.end - b.start)}${remain}</span>
           </div>
         </div>`);
       }
@@ -600,17 +705,40 @@ export function initDayScreen(root: HTMLElement): void {
       </div>`;
   }
 
-  // автокладка: строит день алгоритмом (buildDay) и ставит столько дел,
-  // сколько допускает текущий уровень сил; порядок — по энергии
-  async function autoPlace(): Promise<void> {
+  // автокладка (А1): сначала превью — план рисуется пунктиром на ленте,
+  // запись в базу только по «Применить»
+  function startAutoPreview(): void {
     const { date, routines, scheduled, unscheduled } = state!;
     const occupancy: Occupancy[] = [...routines, ...scheduled.map(occOf)];
-    const limit = autoPlaceLimit(energy);
-    const batch = adaptiveSort(unscheduled, energy).slice(0, limit);
+    const batch = adaptiveSort(unscheduled, energy).slice(0, autoPlaceLimit(energy));
     const plan = buildDay(date, occupancy, batch, { sort: (xs) => adaptiveSort(xs, energy) });
-    for (const b of plan.blocks.filter((x) => x.kind === 'task')) {
-      await updateTask(b.taskId as string, { scheduledDate: date, scheduledStart: b.start });
+    const placed = plan.blocks
+      .filter((b) => b.kind === 'task' && b.taskId)
+      .map((b) => ({ id: b.taskId as string, start: b.start, end: b.end }));
+    autoPreview = { placed, postponed: plan.postponed };
+    whatNow = null;
+    autoPlaceNote = null;
+    render();
+  }
+
+  async function applyAutoPreview(): Promise<void> {
+    if (!autoPreview || !autoPreview.placed.length) {
+      autoPreview = null;
+      render();
+      return;
     }
+    const date = state!.date;
+    for (const p of autoPreview.placed) {
+      await updateTask(p.id, { scheduledDate: date, scheduledStart: p.start });
+    }
+    autoPlaceNote = t('day.autoplace.' + energy); // объяснение стратегии (А2)
+    autoPreview = null;
+    whatNow = null;
+    render();
+  }
+
+  function cancelAutoPreview(): void {
+    autoPreview = null;
     whatNow = null;
     render();
   }
@@ -768,7 +896,7 @@ export function initDayScreen(root: HTMLElement): void {
       if (!side) return;
       const task = state?.unscheduled.find((x) => x.id === side.dataset.id);
       if (!task) return;
-      gesture = { type: 'side', id: task.id, task, startY: e.clientY, startX: e.clientX, moved: false, ghost: null };
+      gesture = { type: 'side', id: task.id, task, el: side, startY: e.clientY, startX: e.clientX, moved: false, ghost: null };
     }
     try {
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
@@ -793,6 +921,8 @@ export function initDayScreen(root: HTMLElement): void {
         } else if (g.type === 'move') {
           g.card.style.opacity = '.85';
         }
+        // микрофидбек: карточка «приподнимается» — жест взят
+        (g.type === 'side' ? g.el : g.card).classList.add('drag-lift');
         // автоскролл не стартуем: autoPoint ещё не знает, где палец
         // (стартует при первом pointermove — иначе страница рвалась к краю)
       });
@@ -838,6 +968,7 @@ export function initDayScreen(root: HTMLElement): void {
     if (g.type === 'move') {
       g.card.style.transform = '';
       g.card.style.opacity = '';
+      g.card.classList.remove('drag-lift');
       dragBubble(null);
       sideEl.classList.remove('drop-col');
       if (g.toSide) {
@@ -855,6 +986,7 @@ export function initDayScreen(root: HTMLElement): void {
     // дело из колонки бросили на строку дня — ставим на время превью
     g.ghost?.remove();
     hideDropPreview();
+    g.el.classList.remove('drag-lift');
     document.querySelectorAll('#tl-list .drop-row').forEach((r) => r.classList.remove('drop-row'));
     const start = sideDropStart(rowAtPoint(e.clientX, e.clientY), g.task.durationMin);
     if (start !== null) {
@@ -863,6 +995,8 @@ export function initDayScreen(root: HTMLElement): void {
         scheduledStart: start,
       });
       whatNow = null;
+      // первая успешная перетаскашка закрывает подсказку
+      try { localStorage.setItem(HOLD_HINT_KEY, '1'); } catch { /* не критично */ }
     }
     render();
   });
@@ -875,8 +1009,10 @@ export function initDayScreen(root: HTMLElement): void {
     if (g.type === 'move') {
       g.card.style.transform = '';
       g.card.style.opacity = '';
+      g.card.classList.remove('drag-lift');
       dragBubble(null);
     }
+    if (g.type === 'side') g.el.classList.remove('drag-lift');
     g.ghost?.remove();
     sideEl.classList.remove('drop-col');
     document.querySelectorAll('#tl-list .drop-row').forEach((r) => r.classList.remove('drop-row'));
@@ -945,7 +1081,35 @@ export function initDayScreen(root: HTMLElement): void {
     }
 
     if (target.closest('#auto-place')) {
-      await autoPlace();
+      startAutoPreview(); // А1: сначала превью, запись — по «Применить»
+      return;
+    }
+    if (target.closest('#preview-apply')) {
+      await applyAutoPreview();
+      return;
+    }
+    if (target.closest('#preview-cancel')) {
+      cancelAutoPreview();
+      return;
+    }
+    // А3: дело из зоны «Не влезает сегодня» — на завтра
+    const nfPostpone = target.closest<HTMLElement>('.nf-postpone');
+    if (nfPostpone) {
+      await updateTask(nfPostpone.dataset.id as string, {
+        scheduledDate: addDays(todayStr(), 1),
+        scheduledStart: null,
+      });
+      whatNow = null;
+      render();
+      return;
+    }
+    // Б1: клик по сегменту шкалы дня — прокрутить ленту к этому времени
+    const seg = target.closest<HTMLElement>('.day-scale-seg');
+    if (seg) {
+      const start = Number(seg.dataset.start);
+      const rows = [...scrollEl.querySelectorAll<HTMLElement>('#tl-list .tl-row[data-start]')];
+      const row = rows.filter((r) => Number(r.dataset.start) <= start).at(-1);
+      if (row) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
       return;
     }
 
@@ -954,6 +1118,7 @@ export function initDayScreen(root: HTMLElement): void {
       energy = energyBtn.dataset.energy as Energy;
       saveEnergy(energy);
       whatNow = null;
+      autoPlaceNote = null; // стратегия сменилась — старое объяснение неактуально
       render();
       return;
     }

@@ -10,7 +10,8 @@ export function downloadFile(name: string, blob: Blob): void {
   a.href = URL.createObjectURL(blob);
   a.download = name;
   a.click();
-  URL.revokeObjectURL(a.href);
+  // отзывать сразу — часть браузеров не успевает начать скачивание
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
 }
 
 import { dayNames, todayStr, addDays, localInputToTs } from '../core/schedule.js';
